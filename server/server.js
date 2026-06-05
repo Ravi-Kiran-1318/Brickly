@@ -54,6 +54,14 @@ app.use((req, res, next) => {
   next();
 });
 
+// Prevent API caching
+app.use((req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  next();
+});
+
 // ── Init Socket.io ────────────────────────────
 const io = initSocket(httpServer);
 app.set('io', io); // available in routes via req.app.get('io')
@@ -71,7 +79,16 @@ app.use('/api/professional', professionalRoutes);
 mongoose.connect(process.env.MONGODB_URI, {
   serverSelectionTimeoutMS: 5000,
 })
-  .then(() => console.log('Connected to MongoDB Successfully'))
+  .then(async () => {
+    console.log('Connected to MongoDB Successfully');
+    try {
+      const User = require('./models/User');
+      await User.createIndexes();
+      console.log('User model indexes built successfully');
+    } catch (err) {
+      console.error('Failed to build User model indexes:', err.message);
+    }
+  })
   .catch((err) => {
     console.error('❌ MongoDB Connection Error:', err.message);
   });

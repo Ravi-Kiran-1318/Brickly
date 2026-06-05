@@ -158,18 +158,81 @@ const JobPostsTab = () => {
                     {job.applicants && job.applicants.length > 0 ? (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         {job.applicants.map((app) => (
-                           <div key={app._id} className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-100 dark:border-slate-800 flex items-center justify-between shadow-sm">
-                             <div>
-                               <p className="font-black text-primary dark:text-white uppercase tracking-tight">{app.professionalId?.name || 'User'}</p>
-                               <p className="text-xs font-bold text-slate-400 mt-0.5">Applied {new Date(app.appliedAt).toLocaleDateString()}</p>
-                             </div>
-                             <button 
-                               onClick={() => handleHire(job._id, app.professionalId._id)}
-                               className="px-4 py-2 bg-green-500 text-white rounded-lg text-xs font-black hover:bg-green-600 transition-all"
-                             >
-                               Hire Now
-                             </button>
-                           </div>
+                           <div key={app._id} className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-slate-800 flex flex-col justify-between shadow-sm hover:shadow-md transition-all gap-4">
+                             <div className="space-y-3">
+                               <div className="flex items-center gap-3">
+                                 <div className="w-10 h-10 rounded-full bg-accent/10 text-accent font-black flex items-center justify-center shrink-0">
+                                   {app.professionalId?.name?.charAt(0) || 'P'}
+                                 </div>
+                                 <div>
+                                   <p className="font-black text-primary dark:text-white uppercase tracking-tight text-sm">
+                                     {app.professionalId?.name || 'Unknown Professional'}
+                                   </p>
+                                   <p className="text-[10px] font-bold text-slate-400">
+                                     Applied on {new Date(app.appliedAt).toLocaleDateString()}
+                                   </p>
+                                 </div>
+                               </div>
+
+                               <div className="grid grid-cols-2 gap-2 text-xs font-bold text-slate-500 dark:text-slate-400">
+                                 <div>
+                                   <span className="text-[10px] uppercase text-slate-400 block font-normal">Trade Role</span>
+                                   {app.professionalId?.jobRole || 'N/A'}
+                                 </div>
+                                 <div>
+                                   <span className="text-[10px] uppercase text-slate-400 block font-normal">Experience</span>
+                                   {app.professionalId?.yearsOfExperience !== undefined ? `${app.professionalId.yearsOfExperience} Years` : 'N/A'}
+                                 </div>
+                                 <div>
+                                   <span className="text-[10px] uppercase text-slate-400 block font-normal">Email</span>
+                                   <span className="break-all">{app.professionalId?.email || 'N/A'}</span>
+                                 </div>
+                                 <div>
+                                   <span className="text-[10px] uppercase text-slate-400 block font-normal">Phone</span>
+                                   {app.professionalId?.phone || 'N/A'}
+                                 </div>
+                                </div>
+
+                                {(app.professionalId?.locationPreference || app.professionalId?.qualification) && (
+                                  <div className="grid grid-cols-2 gap-2 text-xs font-bold text-slate-500 dark:text-slate-400 pt-2 border-t border-slate-100 dark:border-slate-800">
+                                    <div>
+                                      <span className="text-[10px] uppercase text-slate-400 block font-normal">Location Pref.</span>
+                                      {app.professionalId?.locationPreference || 'N/A'}
+                                    </div>
+                                    <div>
+                                      <span className="text-[10px] uppercase text-slate-400 block font-normal">Qualification</span>
+                                      {app.professionalId?.qualification || 'N/A'}
+                                    </div>
+                                  </div>
+                                )}
+
+                                {app.professionalId?.about && (
+                                  <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
+                                    <span className="text-[10px] uppercase text-slate-400 block font-bold mb-0.5">About</span>
+                                    <p className="text-xs text-slate-400 line-clamp-2 leading-relaxed">
+                                      {app.professionalId.about}
+                                    </p>
+                                  </div>
+                                )}
+                              </div>
+
+                              <div className="flex items-center gap-2 pt-4 border-t border-slate-100 dark:border-slate-800">
+                                <a 
+                                  href={`/profile/${app.professionalId?._id}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="flex-1 py-2.5 px-2 rounded-xl text-xs font-black bg-slate-50 dark:bg-slate-800 text-primary dark:text-white flex items-center justify-center gap-1 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 transition-all text-center"
+                                >
+                                  View Profile
+                                </a>
+                                <button 
+                                  onClick={() => handleHire(job._id, app.professionalId?._id)}
+                                  className="flex-1 py-2.5 px-2 rounded-xl text-xs font-black bg-green-500 hover:bg-green-600 text-white flex items-center justify-center gap-1 shadow-lg shadow-green-500/10 transition-all"
+                                >
+                                  Hire Now
+                                </button>
+                              </div>
+                            </div>
                         ))}
                       </div>
                     ) : (

@@ -43,14 +43,50 @@ const QuotesInboxTab = () => {
 
   const handleOpenQuote = async (quote) => {
     setSelectedQuote(quote);
+    
+    // Fetch dealer's inventory products and active deals to auto-calculate prices
+    let inventoryProducts = [];
+    let activeDeals = [];
+    try {
+      const [productsRes, dealsRes] = await Promise.all([
+        api.get('/api/dealer/products'),
+        api.get('/api/dealer/deals')
+      ]);
+      inventoryProducts = productsRes.data;
+      activeDeals = dealsRes.data.filter(d => new Date(d.validUntil) > new Date());
+    } catch (err) {
+      console.error('Failed to fetch inventory/deals for pricing:', err);
+    }
+
     const initialProducts = quote.products.map(p => {
-      console.log('product data:', p.productId); // DEBUG LOG
+      const populatedProduct = p.productId;
+      const productId = populatedProduct?._id || p.productId;
+      const productName = p.productName || populatedProduct?.name || '';
+
+      // Find inventory price
+      const inventoryMatch = inventoryProducts.find(
+        inv => inv._id === productId || inv.name.toLowerCase() === productName.toLowerCase()
+      );
+      const inventoryPrice = inventoryMatch ? Number(inventoryMatch.pricePerUnit) : (populatedProduct?.pricePerUnit || 0);
+
+      // Find active deal matching this product name
+      const dealMatch = activeDeals.find(
+        d => d.productName.toLowerCase() === productName.toLowerCase() && p.quantity >= d.minimumQuantity
+      );
+
+      // Best price: deal price if available, otherwise inventory price
+      const bestPrice = dealMatch ? Number(dealMatch.discountedPrice) : inventoryPrice;
+
       return { 
-        productId: p.productId?._id || p.productId, 
-        pricePerUnit: p.pricePerUnit || p.productId?.price || p.productId?.pricePerUnit || 0, 
-        productName: p.productName, 
+        productId, 
+        pricePerUnit: bestPrice, 
+        productName, 
         quantity: p.quantity, 
-        unit: p.unit 
+        unit: p.unit,
+        productImage: populatedProduct?.imageUrl || '',
+        inventoryPrice,
+        dealApplied: !!dealMatch,
+        dealDiscount: dealMatch ? Number(dealMatch.originalPrice) - Number(dealMatch.discountedPrice) : 0
       };
     });
     
@@ -145,10 +181,26 @@ const QuotesInboxTab = () => {
                     <div className="space-y-3">
                       {responseForm.products.map((p, idx) => (
                         <div key={idx} className="space-y-1">
-                          <div className={`flex items-center gap-4 bg-slate-50 dark:bg-slate-800 p-4 rounded-2xl border transition-all ${p.pricePerUnit <= 0 ? 'border-red-200 dark:border-red-900/30 bg-red-50/30' : 'border-slate-100 dark:border-slate-700'}`}>
+                          <div className={`flex items-center gap-4 bg-slate-50 dark:bg-slate-800 p-4 rounded-2xl border transition-all ${p.pricePerUnit <= 0 ? 'border-red-200 dark:border-red-900/30 bg-red-50/30' : p.dealApplied ? 'border-green-200 dark:border-green-900/30 bg-green-50/30 dark:bg-green-950/10' : 'border-slate-100 dark:border-slate-700'}`}>
                             <div className="flex-1">
-                              <p className="text-sm font-bold text-primary dark:text-white truncate">{p.productName}</p>
+                              <div className="flex items-center gap-2">
+                                <p className="text-sm font-bold text-primary dark:text-white truncate">{p.productName}</p>
+                                {p.dealApplied && (
+                                  <span className="text-[8px] font-black uppercase px-1.5 py-0.5 bg-green-500 text-white rounded-md">Deal</span>
+                                )}
+                              </div>
                               <p className="text-[10px] font-black text-slate-400 uppercase">{p.quantity} {p.unit}</p>
+                              {p.dealApplied && p.inventoryPrice > 0 && (
+                                <p className="text-[9px] text-green-600 font-bold mt-0.5">
+                                  MRP <span className="line-through">₹{p.inventoryPrice}</span> → ₹{p.pricePerUnit} 
+                                  <span className="ml-1">(Save ₹{p.dealDiscount}/unit)</span>
+                                </p>
+                              )}
+                              {!p.dealApplied && p.inventoryPrice > 0 && (
+                                <p className="text-[9px] text-slate-400 font-bold mt-0.5">
+                                  Inventory Price: ₹{p.inventoryPrice}/unit
+                                </p>
+                              )}
                             </div>
                             <div className="w-32">
                               <input 
@@ -158,6 +210,7 @@ const QuotesInboxTab = () => {
                                 onChange={(e) => {
                                   const newProds = [...responseForm.products];
                                   newProds[idx].pricePerUnit = parseFloat(e.target.value) || 0;
+                                  newProds[idx].dealApplied = false; // Manual override clears deal flag
                                   const newTotal = newProds.reduce((sum, curr) => sum + (curr.pricePerUnit * curr.quantity), 0);
                                   setResponseForm({ ...responseForm, products: newProds, customPrice: newTotal });
                                 }}

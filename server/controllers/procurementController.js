@@ -9,10 +9,21 @@ const { getIO } = require('../socket');
 // --- Dealer Discovery ---
 exports.getAllDealers = async (req, res) => {
   try {
-    const { category, nearMe } = req.query;
+    const { category, nearMe, search } = req.query;
     let query = { role: 'dealer' };
 
     if (category) query.categories = category;
+
+    if (search) {
+      const searchRegex = new RegExp(search, 'i');
+      query.$or = [
+        { shopName: searchRegex },
+        { name: searchRegex },
+        { categories: searchRegex },
+        { 'locationDetails.city': searchRegex },
+        { 'locationDetails.pincode': searchRegex }
+      ];
+    }
 
     if (nearMe === 'true') {
       const user = await User.findById(req.user.id);
@@ -67,10 +78,9 @@ exports.sendQuoteRequest = async (req, res) => {
     });
     await notification.save();
 
-    // Socket
     const io = req.app ? req.app.get('io') : null;
     if (io) {
-      io.to(quote.dealerId.toString()).emit('dealer:newQuoteRequest', {
+      io.to(`user:${quote.dealerId}`).emit('dealer:newQuoteRequest', {
         quoteId: quote._id,
         title: 'New Quote Request'
       });

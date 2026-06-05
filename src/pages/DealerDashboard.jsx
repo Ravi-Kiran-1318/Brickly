@@ -3,6 +3,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import socket from '../socket';
+import api from '../api';
+import toast, { Toaster } from 'react-hot-toast';
 import { 
   IconLayoutDashboard, IconPackage, IconFileInvoice, IconTruck, 
   IconTag, IconBell, IconLogout, IconMenu2, IconX,
@@ -27,17 +29,29 @@ const DealerDashboard = () => {
   const { isDark, toggleTheme } = useTheme();
 
   useEffect(() => {
+    const fetchInitialUnread = async () => {
+      try {
+        const res = await api.get('/api/dealer/notifications');
+        const unread = res.data.filter(n => !n.isRead).length;
+        setUnreadCount(unread);
+      } catch (err) {
+        console.error('Failed to load initial notifications:', err);
+      }
+    };
+
     if (user) {
+      fetchInitialUnread();
       socket.connect();
       socket.emit('join', user._id);
 
       socket.on('dealer:newQuoteRequest', (data) => {
         setUnreadCount(prev => prev + 1);
-        // Toast logic could go here
+        toast.success(data.title || "New Quote Request received!", { icon: "🔔" });
       });
 
       socket.on('dealer:lowStock', (data) => {
         setUnreadCount(prev => prev + 1);
+        toast.error("Low Stock Alert!", { icon: "⚠️" });
       });
 
       return () => {
@@ -71,6 +85,7 @@ const DealerDashboard = () => {
 
   return (
     <div className="flex h-screen transition-colors duration-300" style={{ backgroundColor: 'var(--bg-secondary)' }}>
+      <Toaster position="top-right" />
       {/* Sidebar */}
       <motion.aside 
         initial={false}
@@ -88,7 +103,7 @@ const DealerDashboard = () => {
                 initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
                 className="text-xl font-black tracking-tight"
               >
-                BuildR Dealer
+                Brickly Dealer
               </motion.span>
             )}
           </AnimatePresence>
@@ -141,7 +156,7 @@ const DealerDashboard = () => {
         <header className="h-20 border-b flex items-center justify-between px-8 z-10" style={{ backgroundColor: 'var(--bg-primary)', borderColor: 'var(--border)' }}>
           <div className="flex items-center gap-4">
             <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 hover:bg-white/5 rounded-lg" style={{ color: 'var(--text-secondary)' }}>
-              {isSidebarOpen ? <IconMenu2 size={24} /> : <IconX size={24} />}
+              {isSidebarOpen ? <IconX size={24} /> : <IconMenu2 size={24} />}
             </button>
             <h1 className="text-xl font-black tracking-tight" style={{ color: 'var(--text-primary)' }}>{activeTab}</h1>
           </div>

@@ -3,6 +3,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate, Link } from 'react-router-dom';
 import socket from '../socket';
+import api from '../api';
+import toast, { Toaster } from 'react-hot-toast';
 import { 
   IconLayoutDashboard, IconBriefcase, IconUsers, IconPhoto, 
   IconStar, IconPackage, IconFileInvoice, IconTruck, 
@@ -35,18 +37,46 @@ const ContractorDashboard = () => {
   const { isDark, toggleTheme } = useTheme();
 
   useEffect(() => {
+    const fetchInitialUnread = async () => {
+      try {
+        const res = await api.get('/api/contractor/notifications');
+        const unread = res.data.filter(n => !n.isRead).length;
+        setUnreadCount(unread);
+      } catch (err) {
+        console.error('Failed to load initial notifications:', err);
+      }
+    };
+
     if (user) {
+      fetchInitialUnread();
       socket.connect();
       socket.emit('join', user._id);
 
-      socket.on('contractor:newInterestRequest', (data) => setUnreadCount(prev => prev + 1));
-      socket.on('contractor:newQuoteResponse', (data) => setUnreadCount(prev => prev + 1));
-      socket.on('contractor:orderStatusUpdate', (data) => setUnreadCount(prev => prev + 1));
+      socket.on('contractor:newInterestRequest', (data) => {
+        setUnreadCount(prev => prev + 1);
+        toast.success("New Interest Request received!", { icon: "👋" });
+      });
+
+      socket.on('contractor:newQuoteResponse', (data) => {
+        setUnreadCount(prev => prev + 1);
+        toast.success("New Quote Response received!", { icon: "📄" });
+      });
+
+      socket.on('contractor:orderStatusUpdate', (data) => {
+        setUnreadCount(prev => prev + 1);
+        toast.success("Order status updated!", { icon: "📦" });
+      });
+
+      socket.on('contractor:newAvailability', (data) => {
+        setUnreadCount(prev => prev + 1);
+        toast.success(data.notification?.title || "New Professional Available!", { icon: "👷" });
+      });
 
       return () => {
         socket.off('contractor:newInterestRequest');
         socket.off('contractor:newQuoteResponse');
         socket.off('contractor:orderStatusUpdate');
+        socket.off('contractor:newAvailability');
         socket.disconnect();
       };
     }
@@ -90,6 +120,7 @@ const ContractorDashboard = () => {
 
   return (
     <div className="flex h-screen transition-colors duration-300" style={{ backgroundColor: 'var(--bg-secondary)' }}>
+      <Toaster position="top-right" />
       {/* Sidebar */}
       <motion.aside 
         initial={false}
@@ -168,7 +199,7 @@ const ContractorDashboard = () => {
         <header className="h-20 border-b flex items-center justify-between px-8 z-10" style={{ backgroundColor: 'var(--bg-primary)', borderColor: 'var(--border)' }}>
           <div className="flex items-center gap-4">
             <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 hover:bg-white/5 rounded-lg" style={{ color: 'var(--text-secondary)' }}>
-              {isSidebarOpen ? <IconMenu2 size={24} /> : <IconX size={24} />}
+              {isSidebarOpen ? <IconX size={24} /> : <IconMenu2 size={24} />}
             </button>
             <h1 className="text-xl font-black tracking-tight" style={{ color: 'var(--text-primary)' }}>{activeTab}</h1>
           </div>

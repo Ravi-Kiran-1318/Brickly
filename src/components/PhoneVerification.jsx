@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../api';
 import toast from 'react-hot-toast';
 import { motion, AnimatePresence } from 'framer-motion';
 import { IconDeviceMobileCode, IconCheck, IconRefresh, IconArrowRight } from '@tabler/icons-react';
+import { useAuth } from '../context/AuthContext';
 
 const PhoneVerification = ({ onVerified }) => {
+  const { token, user, login } = useAuth();
   const [step, setStep] = useState('idle'); // idle, sent, verified
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
   const [timer, setTimer] = useState(0);
@@ -21,10 +23,7 @@ const PhoneVerification = ({ onVerified }) => {
   const handleSendOTP = async () => {
     setLoading(true);
     try {
-      const token = localStorage.getItem('token');
-      const res = await axios.post('http://localhost:5000/api/otp/send', {}, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await api.post('/api/otp/send');
       if (res.data.success) {
         setStep('sent');
         setTimer(60);
@@ -46,17 +45,12 @@ const PhoneVerification = ({ onVerified }) => {
 
     setLoading(true);
     try {
-      const token = localStorage.getItem('token');
-      const res = await axios.post('http://localhost:5000/api/otp/verify', { otp: code }, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await api.post('/api/otp/verify', { otp: code });
       
       if (res.data.success) {
         setStep('verified');
-        // Update local storage
-        localStorage.setItem('token', res.data.token);
-        const user = JSON.parse(localStorage.getItem('user'));
-        localStorage.setItem('user', JSON.stringify({ ...user, phoneVerified: true }));
+        // Update context & local storage
+        login(res.data.token, { ...user, phoneVerified: true });
         
         toast.success('Phone verified successfully!');
         if (onVerified) onVerified();

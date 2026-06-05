@@ -46,7 +46,7 @@ router.post('/verify-otp', async (req, res) => {
 // @route   POST /api/otp/send
 router.post('/send', auth, async (req, res) => {
   try {
-    const user = await User.findById(req.user._id);
+    const user = await User.findById(req.user.id || req.user._id);
     if (user.phoneVerified) {
       return res.status(400).json({ message: 'Phone already verified' });
     }
@@ -71,7 +71,7 @@ router.post('/send', auth, async (req, res) => {
 router.post('/verify', auth, async (req, res) => {
   try {
     const { otp } = req.body;
-    const user = await User.findById(req.user._id);
+    const user = await User.findById(req.user.id || req.user._id);
 
     if (user.phoneVerified) {
       return res.status(400).json({ message: 'Phone already verified' });
@@ -118,7 +118,7 @@ router.post('/verify', auth, async (req, res) => {
 // @route   POST /api/otp/resend
 router.post('/resend', auth, async (req, res) => {
   try {
-    const user = await User.findById(req.user._id);
+    const user = await User.findById(req.user.id || req.user._id);
     if (user.phoneVerified) {
       return res.status(400).json({ message: 'Phone already verified' });
     }

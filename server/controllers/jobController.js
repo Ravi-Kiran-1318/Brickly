@@ -6,16 +6,52 @@ const { getIO } = require('../socket');
 // const { sendEmail } = require('../utils/mailer'); // Assuming mailer exists
 
 exports.createJob = async (req, res) => {
-  const job = new JobPost({
-    ...req.body,
-    contractorId: req.user.id
-  });
-  await job.save();
-  res.status(201).json(job);
+  try {
+    const job = new JobPost({
+      ...req.body,
+      contractorId: req.user.id
+    });
+    await job.save();
+
+    // Find matching professionals (role: 'professional', and jobRole matches job.jobRole)
+    const matchingProfessionals = await User.find({
+      role: 'professional',
+      jobRole: { $regex: new RegExp(`^${job.jobRole}$`, 'i') }
+    });
+
+    const io = getIO();
+    const contractor = await User.findById(req.user.id);
+
+    for (const prof of matchingProfessionals) {
+      // 1. Save Notification
+      const notification = new Notification({
+        userId: prof._id,
+        type: 'General',
+        title: 'New Job Matching Your Role!',
+        message: `${contractor.companyName || contractor.name} posted a new job vacancy for "${job.jobRole}" in ${job.workLocation}.`,
+        relatedId: job._id
+      });
+      await notification.save();
+
+      // 2. Emit Socket event
+      if (io) {
+        io.to(`user:${prof._id}`).emit('professional:newJob', {
+          job,
+          notification
+        });
+      }
+    }
+
+    res.status(201).json(job);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
 };
 
 exports.getMyJobs = async (req, res) => {
-  const jobs = await JobPost.find({ contractorId: req.user.id }).sort({ createdAt: -1 });
+  const jobs = await JobPost.find({ contractorId: req.user.id })
+    .populate('applicants.professionalId', 'name phone email jobRole yearsOfExperience locationPreference qualification about')
+    .sort({ createdAt: -1 });
   res.json(jobs);
 };
 
@@ -37,7 +73,7 @@ exports.deleteJob = async (req, res) => {
 
 exports.getApplicants = async (req, res) => {
   const job = await JobPost.findOne({ _id: req.params.id, contractorId: req.user.id })
-    .populate('applicants.professionalId', 'name phone email jobRole yearsOfExperience');
+    .populate('applicants.professionalId', 'name phone email jobRole yearsOfExperience locationPreference qualification about');
   if (!job) return res.status(404).json({ message: 'Job not found' });
   res.json(job.applicants);
 };
@@ -82,7 +118,7 @@ exports.hireProfessional = async (req, res) => {
 
   // 4. Socket event
   try {
-    getIO().to(professionalId.toString()).emit('professional:hired', {
+    getIO().to(`user:${professionalId}`).emit('professional:hired', {
       jobRole: job.jobRole,
       title: 'You are Hired!'
     });

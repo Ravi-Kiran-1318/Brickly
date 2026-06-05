@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import api from '../../api';
+import socket from '../../socket';
 import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
 import { 
@@ -14,6 +15,21 @@ const BrowseProfessionalsTab = () => {
 
   useEffect(() => {
     fetchProfessionals();
+
+    const handleNewAvailability = (data) => {
+      if (data.post) {
+        setPosts(prev => {
+          if (prev.some(p => p._id === data.post._id)) return prev;
+          return [data.post, ...prev];
+        });
+      }
+    };
+
+    socket.on('contractor:newAvailability', handleNewAvailability);
+
+    return () => {
+      socket.off('contractor:newAvailability', handleNewAvailability);
+    };
   }, []);
 
   const fetchProfessionals = async () => {

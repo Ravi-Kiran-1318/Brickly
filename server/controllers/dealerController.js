@@ -170,20 +170,71 @@ exports.respondToQuote = async (req, res) => {
     const quoteRequest = await QuoteRequest.findOne({ _id: req.params.id, dealerId: req.user.id });
     if (!quoteRequest) return res.status(404).json({ message: 'Quote request not found' });
 
+    // Auto-calculate pricing from inventory & active deals
+    const enrichedProducts = [];
+    let calculatedTotal = 0;
+
+    for (const p of products) {
+      // 1. Look up inventory product price
+      const inventoryProduct = p.productId
+        ? await Product.findOne({ _id: p.productId, dealerId: req.user.id })
+        : null;
+
+      const inventoryPrice = inventoryProduct ? Number(inventoryProduct.pricePerUnit) : 0;
+
+      // 2. Check for active deal on this product (match by name, case-insensitive)
+      const productName = p.productName || (inventoryProduct ? inventoryProduct.name : '');
+      const activeDeal = await Deal.findOne({
+        dealerId: req.user.id,
+        productName: { $regex: new RegExp(`^${productName}$`, 'i') },
+        validUntil: { $gt: new Date() }
+      });
+
+      // 3. Determine the best price per unit
+      let finalPricePerUnit;
+      let dealApplied = false;
+      let dealDiscount = 0;
+      const quantity = Number(p.quantity);
+
+      if (activeDeal && quantity >= activeDeal.minimumQuantity) {
+        // Deal applies — use discounted price
+        finalPricePerUnit = Number(activeDeal.discountedPrice);
+        dealApplied = true;
+        dealDiscount = Number(activeDeal.originalPrice) - Number(activeDeal.discountedPrice);
+      } else if (Number(p.pricePerUnit) > 0) {
+        // Dealer manually entered a price → use it
+        finalPricePerUnit = Number(p.pricePerUnit);
+      } else {
+        // Fall back to inventory price
+        finalPricePerUnit = inventoryPrice;
+      }
+
+      const subTotal = finalPricePerUnit * quantity;
+      calculatedTotal += subTotal;
+
+      enrichedProducts.push({
+        productId: p.productId,
+        productName: productName,
+        productImage: p.productImage || (inventoryProduct ? inventoryProduct.imageUrl : '') || '',
+        quantity: quantity,
+        unit: p.unit || (inventoryProduct ? inventoryProduct.unit : ''),
+        pricePerUnit: finalPricePerUnit,
+        subTotal: subTotal,
+        originalPrice: inventoryPrice,
+        dealApplied: dealApplied,
+        dealDiscount: dealDiscount
+      });
+    }
+
+    // Use the calculated total, or the dealer's custom override if explicitly provided
+    const finalTotal = (customPrice && Number(customPrice) > 0) ? Number(customPrice) : calculatedTotal;
+
     const response = new QuoteResponse({
       quoteRequestId: quoteRequest._id,
       dealerId: req.user.id,
       contractorId: quoteRequest.contractorId,
-      customPrice: Number(customPrice),
-      products: products.map(p => ({
-        productId: p.productId,
-        productName: p.productName,
-        productImage: p.productImage || '',
-        quantity: Number(p.quantity),
-        unit: p.unit,
-        pricePerUnit: Number(p.pricePerUnit),
-        subTotal: Number(p.pricePerUnit) * Number(p.quantity)
-      })),
+      customPrice: finalTotal,
+      products: enrichedProducts,
       deliveryTimeline,
       quoteExpiryDate,
       message
@@ -219,9 +270,18 @@ exports.respondToQuote = async (req, res) => {
       html: `
         <h2>Hello ${contractor.name},</h2>
         <p>You have received a new quote response for your project.</p>
-        <p><strong>Price:</strong> ₹${customPrice}</p>
+        <p><strong>Price:</strong> ₹${finalTotal.toLocaleString()}</p>
         <p><strong>Timeline:</strong> ${deliveryTimeline}</p>
-        <p>Log in to BuildR to view full details and accept the quote.</p>
+        <h4>Product Breakdown:</h4>
+        <ul>
+          ${enrichedProducts.map(p => `
+            <li>
+              ${p.productName} — ${p.quantity} ${p.unit} @ ₹${p.pricePerUnit}/unit = ₹${p.subTotal.toLocaleString()}
+              ${p.dealApplied ? ` <em>(Deal applied! Save ₹${p.dealDiscount}/unit)</em>` : ''}
+            </li>
+          `).join('')}
+        </ul>
+        <p>Log in to Brickly to view full details and accept the quote.</p>
       `
     });
 

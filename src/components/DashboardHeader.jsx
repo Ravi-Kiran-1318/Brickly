@@ -2,13 +2,14 @@ import React from 'react';
 import { PhoneVerifiedBadge } from './VerifiedBadges';
 import { IconUserCircle, IconLogout } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 
 const DashboardHeader = ({ user }) => {
   const navigate = useNavigate();
+  const { logout } = useAuth();
 
   const handleLogout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
+    logout();
     navigate('/login');
   };
 

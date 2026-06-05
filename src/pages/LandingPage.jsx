@@ -6,9 +6,11 @@ import {
   Sparkles, Search, Package, Hammer, Home, HardHat, 
   Store, Wrench, Bell, MapPin, Bot, ShieldCheck, 
   Clock, Briefcase, Tag, Menu, X, ChevronDown,
-  Star, Linkedin, Instagram, Twitter, Check, Moon, Sun
+  Star, Linkedin, Instagram, Twitter, Check, Moon, Sun,
+  LogOut
 } from 'lucide-react';
 import ThemeToggle from '../components/ThemeToggle';
+import { useAuth } from '../context/AuthContext';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
@@ -36,6 +38,7 @@ const AnimationStyles = () => (
 
 // --- Navbar Component ---
 const Navbar = () => {
+  const { user, logout } = useAuth();
   const [scrolled, setScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -52,6 +55,10 @@ const Navbar = () => {
     { name: 'Features', href: '#features' },
     { name: 'FAQ', href: '#faq' },
   ];
+
+  const getDashboardPath = (u) => {
+    return u.role === 'contractor' ? '/contractor' : `/${u.role}`;
+  };
 
   return (
     <nav className={cn(
@@ -87,12 +94,34 @@ const Navbar = () => {
       {/* Right: Buttons */}
       <div className="hidden md:flex items-center gap-4">
         <ThemeToggle />
-        <Link to="/login" className="px-6 py-2 border-2 text-sm font-bold rounded-lg transition-all" style={{ borderColor: 'var(--navy)', color: 'var(--navy)' }}>
-          Login
-        </Link>
-        <Link to="/register" className="px-6 py-2 bg-[#F97316] text-white font-bold rounded-lg hover:bg-orange-600 shadow-lg shadow-orange-100 transition-all text-sm">
-          Get Started
-        </Link>
+        {user ? (
+          <div className="flex items-center gap-6 border-l pl-6 ml-2" style={{ borderColor: 'var(--border)' }}>
+            <div className="text-right hidden lg:block mr-2">
+              <p className="text-[13px] font-black tracking-tight leading-tight" style={{ color: 'var(--text-primary)' }}>{user.name}</p>
+              <p className="text-[10px] font-bold text-[#F97316] uppercase tracking-wider leading-none mt-0.5">{user.role}</p>
+            </div>
+            <Link to={getDashboardPath(user)} className="px-5 py-2 bg-[#F97316] text-white font-bold rounded-lg hover:bg-orange-600 shadow-lg shadow-orange-100 transition-all text-sm shrink-0">
+              Dashboard &rarr;
+            </Link>
+            <button
+              onClick={() => logout()}
+              className="p-2.5 border text-gray-500 hover:text-red-500 hover:border-red-200 rounded-lg transition-all shrink-0 ml-1"
+              style={{ borderColor: 'var(--border)' }}
+              title="Sign Out"
+            >
+              <LogOut size={16} />
+            </button>
+          </div>
+        ) : (
+          <>
+            <Link to="/login" className="px-6 py-2 border-2 text-sm font-bold rounded-lg transition-all" style={{ borderColor: 'var(--navy)', color: 'var(--navy)' }}>
+              Login
+            </Link>
+            <Link to="/register" className="px-6 py-2 bg-[#F97316] text-white font-bold rounded-lg hover:bg-orange-600 shadow-lg shadow-orange-100 transition-all text-sm">
+              Get Started
+            </Link>
+          </>
+        )}
       </div>
 
       {/* Mobile Menu Icon */}
@@ -121,12 +150,35 @@ const Navbar = () => {
               </a>
             ))}
             <div className="flex flex-col gap-3 mt-2">
-              <Link to="/login" className="px-6 py-3 border-2 font-bold rounded-lg text-center" style={{ borderColor: 'var(--navy)', color: 'var(--navy)' }}>
-                Login
-              </Link>
-              <Link to="/register" className="px-6 py-3 bg-[#F97316] text-white font-bold rounded-lg text-center shadow-lg hover:bg-orange-600 transition-all">
-                Get Started
-              </Link>
+              {user ? (
+                <div className="flex flex-col gap-3 p-4 border rounded-xl" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-secondary)' }}>
+                  <div className="text-left">
+                    <p className="text-sm font-black" style={{ color: 'var(--text-primary)' }}>{user.name}</p>
+                    <p className="text-xs font-bold text-[#F97316] uppercase tracking-wider">{user.role}</p>
+                  </div>
+                  <div className="flex gap-2 w-full">
+                    <Link to={getDashboardPath(user)} className="flex-1 py-2.5 bg-[#F97316] text-white text-center font-bold rounded-lg shadow-lg hover:bg-orange-600 transition-all text-sm" onClick={() => setMobileMenuOpen(false)}>
+                      Dashboard &rarr;
+                    </Link>
+                    <button
+                      onClick={() => { logout(); setMobileMenuOpen(false); }}
+                      className="px-3 border border-gray-200 text-gray-500 hover:text-red-500 hover:border-red-200 rounded-lg transition-all flex items-center justify-center"
+                      title="Sign Out"
+                    >
+                      <LogOut size={18} />
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <Link to="/login" className="px-6 py-3 border-2 font-bold rounded-lg text-center" style={{ borderColor: 'var(--navy)', color: 'var(--navy)' }} onClick={() => setMobileMenuOpen(false)}>
+                    Login
+                  </Link>
+                  <Link to="/register" className="px-6 py-3 bg-[#F97316] text-white font-bold rounded-lg text-center shadow-lg hover:bg-orange-600 transition-all" onClick={() => setMobileMenuOpen(false)}>
+                    Get Started
+                  </Link>
+                </>
+              )}
             </div>
           </motion.div>
         )}

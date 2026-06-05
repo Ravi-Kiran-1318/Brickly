@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import axios from 'axios';
+import api from '../api';
 import { PhoneVerifiedBadge, GSTVerifiedBadge } from '../components/VerifiedBadges';
 import { IconMapPin, IconCalendar, IconMail, IconPhone } from '@tabler/icons-react';
 
@@ -12,7 +12,7 @@ const PublicProfile = () => {
   useEffect(() => {
     const fetchProfile = async () => {
       try {
-        const res = await axios.get(`http://localhost:5000/api/auth/profile/${id}`);
+        const res = await api.get(`/api/auth/profile/${id}`);
         setProfile(res.data);
       } catch (err) {
         console.error(err);

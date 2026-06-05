@@ -4,6 +4,7 @@ const AvailabilityPost = require('../models/AvailabilityPost');
 const Application = require('../models/Application');
 const Notification = require('../models/Notification');
 const { sendMail } = require('../utils/mailer');
+const { getIO } = require('../socket');
 
 // --- Profile ---
 exports.getProfile = async (req, res) => {
@@ -174,7 +175,38 @@ exports.createAvailability = async (req, res) => {
     // Set user as available
     await User.findByIdAndUpdate(req.user.id, { isAvailable: true });
 
-    res.status(201).json(post);
+    // Populate professional's details so front-end has all info
+    const populatedPost = await AvailabilityPost.findById(post._id).populate(
+      'professionalId',
+      'name email phone avatar about jobRole yearsOfExperience'
+    );
+
+    // Notify all contractors
+    const contractors = await User.find({ role: 'contractor' });
+    const professional = await User.findById(req.user.id);
+    const io = getIO();
+
+    for (const contractor of contractors) {
+      // 1. Save Notification
+      const notification = new Notification({
+        userId: contractor._id,
+        type: 'General',
+        title: 'New Professional Available!',
+        message: `${professional.name} is now available as a ${populatedPost.jobRole || professional.jobRole || 'Professional'}!`,
+        relatedId: populatedPost._id
+      });
+      await notification.save();
+
+      // 2. Emit Socket Event
+      if (io) {
+        io.to(`user:${contractor._id}`).emit('contractor:newAvailability', {
+          post: populatedPost,
+          notification
+        });
+      }
+    }
+
+    res.status(201).json(populatedPost);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -328,7 +360,7 @@ exports.hireDirectly = async (req, res) => {
         <h2>Congratulations!</h2>
         <p>You have a direct hire request from <strong>${contractor.companyName || contractor.name}</strong>.</p>
         <p><strong>Role:</strong> ${post.jobRole}</p>
-        <p>Log in to BuildR to contact them.</p>
+        <p>Log in to Brickly to contact them.</p>
       `
     });
 

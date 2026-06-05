@@ -3,15 +3,15 @@ import { useNavigate, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import api from '../api';
 import toast, { Toaster } from 'react-hot-toast';
-import { 
-  IconHelmet, IconMail, IconLock, IconEye, 
-  IconEyeOff, IconArrowRight, IconShieldCheck, 
-  IconLayoutDashboard
+import {
+  IconHelmet, IconMail, IconLock, IconEye,
+  IconEyeOff, IconArrowRight, IconShieldCheck,
+  IconLayoutDashboard, IconLogout
 } from '@tabler/icons-react';
 import { useAuth } from '../context/AuthContext';
 
 const LoginPage = () => {
-  const { user, login } = useAuth();
+  const { user, login, logout } = useAuth();
   const navigate = useNavigate();
   const [formData, setFormData] = useState({ email: '', password: '' });
   const [showPassword, setShowPassword] = useState(false);
@@ -27,14 +27,6 @@ const LoginPage = () => {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isResetting, setIsResetting] = useState(false);
-
-  React.useEffect(() => {
-    if (user) {
-      const role = user.role;
-      const target = role === 'contractor' ? '/contractor' : `/${role}`;
-      navigate(target, { replace: true });
-    }
-  }, [user, navigate]);
 
   React.useEffect(() => {
     let interval;
@@ -53,7 +45,7 @@ const LoginPage = () => {
     setLoading(true);
     try {
       const res = await api.post('/api/auth/login', formData, { timeout: 60000 });
-      
+
       if (res.data.requiresOTP) {
         setPendingEmail(res.data.email);
         setPendingName(res.data.name || 'User');
@@ -73,7 +65,7 @@ const LoginPage = () => {
         setTimeout(() => navigate(target, { replace: true }), 1500);
       }
     } catch (err) {
-      const msg = err.code === 'ECONNABORTED' 
+      const msg = err.code === 'ECONNABORTED'
         ? "The server is taking too long to respond. Please check your connection."
         : err.response?.data?.message || 'Login failed';
       toast.error(msg);
@@ -113,7 +105,7 @@ const LoginPage = () => {
         email: pendingEmail,
         otp
       }, { timeout: 60000 });
-      
+
       if (forgotStep === 'otp') {
         toast.success("Code verified! Set your new password.");
         setForgotStep('reset');
@@ -203,11 +195,11 @@ const LoginPage = () => {
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col lg:flex-row">
       <Toaster position="top-right" />
-      
+
       {/* Branding Panel */}
       <div className="hidden lg:flex lg:w-[38%] bg-primary text-white p-12 flex-col justify-between relative overflow-hidden">
         <div className="absolute top-[-10%] right-[-10%] w-64 h-64 bg-accent/20 rounded-full blur-3xl" />
-        
+
         <div className="relative z-10">
           <Link to="/" className="flex items-center gap-2 mb-16">
             <div className="bg-accent p-2 rounded-xl">
@@ -251,24 +243,57 @@ const LoginPage = () => {
           <span className="text-2xl font-black tracking-tight text-primary">Brickly</span>
         </Link>
 
-        <motion.div 
+        <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           className="w-full max-w-md bg-white rounded-3xl border border-gray-100 shadow-2xl shadow-slate-200/50 p-8 md:p-12"
         >
           <div className="mb-10 text-center lg:text-left">
             <h1 className="text-3xl font-black text-primary mb-2">
-              {forgotStep === 'email' ? 'Reset Password' : 
-               forgotStep === 'otp' || otpStep ? 'Verify Identity' : 
-               forgotStep === 'reset' ? 'New Password' : 'Welcome Back'}
+              {forgotStep === 'email' ? 'Reset Password' :
+                forgotStep === 'otp' || otpStep ? 'Verify Identity' :
+                  forgotStep === 'reset' ? 'New Password' : 'Welcome Back'}
             </h1>
             <p className="text-gray-400 font-medium tracking-tight">
               {forgotStep === 'email' ? 'Enter your email to receive a reset code' :
-               forgotStep === 'otp' || otpStep 
-                ? `Enter the 6-digit code sent to ${pendingEmail}` 
-                : forgotStep === 'reset' ? 'Create a secure new password' : 'Enter your credentials to access your account'}
+                forgotStep === 'otp' || otpStep
+                  ? `Enter the 6-digit code sent to ${pendingEmail}`
+                  : forgotStep === 'reset' ? 'Create a secure new password' : 'Enter your credentials to access your account'}
             </p>
           </div>
+
+          {user && forgotStep === 'login' && !otpStep && (
+            <div className="mb-6 p-4 bg-orange-50/50 border border-orange-100 rounded-2xl text-left space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="overflow-hidden mr-2">
+                  <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Signed in as</p>
+                  <p className="text-sm font-black text-primary truncate">{user.name}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const role = user.role;
+                    const target = role === 'contractor' ? '/contractor' : `/${role}`;
+                    navigate(target, { replace: true });
+                  }}
+                  className="px-4 py-2 bg-primary text-white text-xs font-bold rounded-xl hover:bg-slate-905 transition-all shrink-0"
+                >
+                  Go to Dashboard
+                </button>
+              </div>
+              <div className="pt-2 border-t border-orange-100 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => {
+                    logout();
+                  }}
+                  className="text-xs font-bold text-[#F97316] hover:text-orange-600 transition-colors"
+                >
+                  Not you? Sign Out
+                </button>
+              </div>
+            </div>
+          )}
 
           {forgotStep === 'email' ? (
             <form onSubmit={handleForgotPasswordRequest} className="space-y-6">
@@ -276,7 +301,7 @@ const LoginPage = () => {
                 <label className="text-sm font-black text-primary ml-1">Email Address</label>
                 <div className="relative group">
                   <IconMail className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-accent transition-colors" size={20} />
-                  <input 
+                  <input
                     required
                     type="email"
                     value={pendingEmail}
@@ -304,7 +329,7 @@ const LoginPage = () => {
                 <label className="text-sm font-black text-primary ml-1">New Password</label>
                 <div className="relative group">
                   <IconLock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-accent transition-colors" size={20} />
-                  <input 
+                  <input
                     required
                     type="password"
                     value={newPassword}
@@ -318,7 +343,7 @@ const LoginPage = () => {
                 <label className="text-sm font-black text-primary ml-1">Confirm New Password</label>
                 <div className="relative group">
                   <IconLock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-accent transition-colors" size={20} />
-                  <input 
+                  <input
                     required
                     type="password"
                     value={confirmPassword}
@@ -362,9 +387,8 @@ const LoginPage = () => {
                   type="button"
                   disabled={!canResend}
                   onClick={handleResendOTP}
-                  className={`text-sm font-bold transition-colors ${
-                    canResend ? 'text-accent hover:text-orange-600 underline' : 'text-gray-300 cursor-not-allowed'
-                  }`}
+                  className={`text-sm font-bold transition-colors ${canResend ? 'text-accent hover:text-orange-600 underline' : 'text-gray-300 cursor-not-allowed'
+                    }`}
                 >
                   Resend OTP
                 </button>
@@ -373,16 +397,15 @@ const LoginPage = () => {
               <button
                 disabled={isVerifying}
                 onClick={handleVerifyOTP}
-                className={`w-full py-4 rounded-2xl font-black text-lg shadow-xl shadow-orange-100 transition-all flex items-center justify-center gap-2 ${
-                  isVerifying ? 'bg-accent/70 cursor-not-allowed text-white' : 'bg-accent text-white hover:bg-orange-600 hover:scale-[1.02] active:scale-[0.98]'
-                }`}
+                className={`w-full py-4 rounded-2xl font-black text-lg shadow-xl shadow-orange-100 transition-all flex items-center justify-center gap-2 ${isVerifying ? 'bg-accent/70 cursor-not-allowed text-white' : 'bg-accent text-white hover:bg-orange-600 hover:scale-[1.02] active:scale-[0.98]'
+                  }`}
               >
                 {isVerifying ? 'Verifying...' : 'Verify & Sign In'}
                 {!isVerifying && <IconShieldCheck size={22} />}
               </button>
 
-              <button 
-                type="button" 
+              <button
+                type="button"
                 onClick={() => { setOtpStep(false); setForgotStep('login'); }}
                 className="w-full text-xs font-bold text-gray-400 hover:text-primary transition-colors text-center"
               >
@@ -395,11 +418,11 @@ const LoginPage = () => {
                 <label className="text-sm font-black text-primary ml-1">Email Address</label>
                 <div className="relative group">
                   <IconMail className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-accent transition-colors" size={20} />
-                  <input 
+                  <input
                     required
                     type="email"
                     value={formData.email}
-                    onChange={(e) => setFormData({...formData, email: e.target.value})}
+                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                     className="w-full pl-12 pr-4 py-4 bg-gray-50 border border-gray-200 rounded-2xl outline-none focus:ring-4 focus:ring-orange-100 focus:border-accent transition-all font-medium"
                     placeholder="name@company.com"
                   />
@@ -409,7 +432,7 @@ const LoginPage = () => {
               <div className="space-y-2">
                 <div className="flex items-center justify-between ml-1">
                   <label className="text-sm font-black text-primary">Password</label>
-                  <button 
+                  <button
                     type="button"
                     onClick={() => setForgotStep('email')}
                     className="text-xs font-bold text-accent hover:underline"
@@ -419,16 +442,16 @@ const LoginPage = () => {
                 </div>
                 <div className="relative group">
                   <IconLock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-accent transition-colors" size={20} />
-                  <input 
+                  <input
                     required
                     type={showPassword ? "text" : "password"}
                     value={formData.password}
-                    onChange={(e) => setFormData({...formData, password: e.target.value})}
+                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                     className="w-full pl-12 pr-12 py-4 bg-gray-50 border border-gray-200 rounded-2xl outline-none focus:ring-4 focus:ring-orange-100 focus:border-accent transition-all font-medium"
                     placeholder="••••••••"
                   />
-                  <button 
-                    type="button" 
+                  <button
+                    type="button"
                     onClick={() => setShowPassword(!showPassword)}
                     className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
                   >
@@ -440,11 +463,10 @@ const LoginPage = () => {
               <button
                 disabled={loading}
                 type="submit"
-                className={`w-full py-4 rounded-2xl font-black text-lg shadow-xl shadow-orange-100 transition-all flex items-center justify-center gap-2 ${
-                  loading 
-                    ? 'bg-accent/70 cursor-not-allowed text-white' 
+                className={`w-full py-4 rounded-2xl font-black text-lg shadow-xl shadow-orange-100 transition-all flex items-center justify-center gap-2 ${loading
+                    ? 'bg-accent/70 cursor-not-allowed text-white'
                     : 'bg-accent text-white hover:bg-orange-600 hover:scale-[1.02] active:scale-[0.98]'
-                }`}
+                  }`}
               >
                 {loading ? 'Signing in...' : 'Sign In'}
                 {!loading && <IconArrowRight size={22} />}
