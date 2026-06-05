@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import api from '../../api';
 import toast from 'react-hot-toast';
-import { 
+import {
   IconBuildingStore, IconMapPin, IconPhone, IconMail, 
   IconPackage, IconTag, IconArrowRight, IconSearch,
-  IconX, IconChevronRight, IconCheck
+  IconX, IconChevronRight, IconCheck, IconStarFilled, IconShieldCheck
 } from '@tabler/icons-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import DealerProfileModal from './DealerProfileModal';
@@ -96,6 +96,17 @@ const MaterialsTab = () => {
                   <span className="flex items-center gap-1.5"><IconMapPin size={14}/> {dealer.locationDetails?.city || 'India'}</span>
                   <span className="flex items-center gap-1.5"><IconTag size={14}/> {dealer.categories?.slice(0,2).join(', ')}</span>
                 </div>
+                {dealer.totalReviews > 0 && (
+                  <div className="flex items-center gap-3 mt-2">
+                     <span className="flex items-center gap-1 text-sm font-black text-accent">
+                        <IconStarFilled size={16} /> {dealer.averageRating?.toFixed(1)}
+                     </span>
+                     <span className="text-xs font-bold text-slate-400">({dealer.totalReviews} reviews)</span>
+                     <span className="flex items-center gap-1 text-[9px] font-black uppercase tracking-widest text-green-600 bg-green-50 px-2 py-0.5 rounded">
+                        <IconShieldCheck size={10} /> Verified Purchases Only
+                     </span>
+                  </div>
+                )}
               </div>
             </div>
             <button onClick={() => openDealerProfile(dealer._id)} className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-400 hover:bg-accent hover:text-white transition-all">

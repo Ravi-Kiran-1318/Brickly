@@ -118,7 +118,8 @@ exports.applyToJob = async (req, res) => {
       userId: jobPost.contractorId,
       title: 'New Job Application',
       message: `${professional.name} applied for "${jobPost.jobRole}" position.`,
-      type: 'General'
+      type: 'General',
+      actionTab: 'Job Posts'
     });
     await notification.save();
 
@@ -193,7 +194,8 @@ exports.createAvailability = async (req, res) => {
         type: 'General',
         title: 'New Professional Available!',
         message: `${professional.name} is now available as a ${populatedPost.jobRole || professional.jobRole || 'Professional'}!`,
-        relatedId: populatedPost._id
+        relatedId: populatedPost._id,
+        actionTab: 'Browse Professionals'
       });
       await notification.save();
 
@@ -340,7 +342,8 @@ exports.hireDirectly = async (req, res) => {
       userId: professional._id,
       title: 'Direct Hire Request!',
       message: `${contractor.companyName || contractor.name} wants to hire you directly for "${post.jobRole}".`,
-      type: 'General'
+      type: 'General',
+      actionTab: 'My Availability'
     });
     await notification.save();
 

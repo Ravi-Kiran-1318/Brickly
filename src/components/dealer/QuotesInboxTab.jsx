@@ -61,43 +61,89 @@ const QuotesInboxTab = () => {
     const initialProducts = quote.products.map(p => {
       const populatedProduct = p.productId;
       const productId = populatedProduct?._id || p.productId;
-      const productName = p.productName || populatedProduct?.name || '';
+      const productName = p.productName
+        || populatedProduct?.name || '';
 
-      // Find inventory price
+      // Step 1: Get base inventory price
       const inventoryMatch = inventoryProducts.find(
-        inv => inv._id === productId || inv.name.toLowerCase() === productName.toLowerCase()
+        inv =>
+          String(inv._id) === String(productId) ||
+          inv.name.toLowerCase().trim() ===
+            productName.toLowerCase().trim()
       );
-      const inventoryPrice = inventoryMatch ? Number(inventoryMatch.pricePerUnit) : (populatedProduct?.pricePerUnit || 0);
+      const inventoryPrice = inventoryMatch
+        ? Number(inventoryMatch.pricePerUnit)
+        : (Number(p.unitPrice) || Number(populatedProduct?.pricePerUnit) || 0);
 
-      // Find active deal matching this product name
-      const dealMatch = activeDeals.find(
-        d => d.productName.toLowerCase() === productName.toLowerCase() && p.quantity >= d.minimumQuantity
-      );
+      // Step 2: Determine effective price
+      // RULE: if isDeal=true AND dealPrice exists → ALWAYS use dealPrice
+      //       No fallback, no override. Period.
+      let bestPrice    = inventoryPrice;
+      let dealApplied  = false;
+      let dealDiscount = 0;
 
-      // Best price: deal price if available, otherwise inventory price
-      const bestPrice = dealMatch ? Number(dealMatch.discountedPrice) : inventoryPrice;
+      if (p.isDeal && p.dealPrice && Number(p.dealPrice) > 0) {
+        // ── DEAL PRODUCT ──
+        // Use the exact dealPrice saved in the quote request
+        bestPrice    = Number(p.dealPrice);
+        dealApplied  = true;
+        // Discount per unit = inventory price - deal price
+        dealDiscount = inventoryPrice > 0
+          ? inventoryPrice - bestPrice
+          : (Number(p.unitPrice) > 0
+              ? Number(p.unitPrice) - bestPrice
+              : 0);
 
-      return { 
-        productId, 
-        pricePerUnit: bestPrice, 
-        productName, 
-        quantity: p.quantity, 
-        unit: p.unit,
-        productImage: populatedProduct?.imageUrl || '',
+      } else if (!p.isDeal) {
+        // ── REGULAR PRODUCT (not a deal) ──
+        // Check if there is an active deal for this product
+        // as a convenience — only apply if qty meets MOQ
+        const dealMatch = activeDeals.find(d =>
+          d.productName.toLowerCase().trim() ===
+            productName.toLowerCase().trim() &&
+          Number(p.quantity) >= Number(d.minimumQuantity)
+        );
+        if (dealMatch) {
+          bestPrice    = Number(dealMatch.discountedPrice);
+          dealApplied  = true;
+          dealDiscount = Number(dealMatch.originalPrice)
+            - Number(dealMatch.discountedPrice);
+        }
+        // else: bestPrice stays as inventoryPrice — no change
+      }
+      // Note: if p.isDeal=true but dealPrice is 0/missing,
+      // bestPrice stays as inventoryPrice (safe fallback)
+
+      return {
+        productId,
+        pricePerUnit:   bestPrice,
+        productName,
+        quantity:       Number(p.quantity),
+        unit:           p.unit || populatedProduct?.unit || '',
+        productImage:   populatedProduct?.imageUrl || '',
         inventoryPrice,
-        dealApplied: !!dealMatch,
-        dealDiscount: dealMatch ? Number(dealMatch.originalPrice) - Number(dealMatch.discountedPrice) : 0
+        dealApplied,
+        dealDiscount,
+        // Preserve original deal info for display
+        isDeal:         p.isDeal || false,
+        dealPrice:      p.dealPrice || null,
+        originalUnitPrice: p.unitPrice || inventoryPrice,
       };
     });
-    
-    const initialTotal = initialProducts.reduce((sum, p) => sum + (p.pricePerUnit * p.quantity), 0);
-    
+
+    // Total = sum of (pricePerUnit × quantity) for all products
+    // CORRECT: deal products use dealPrice, regular use inventoryPrice
+    const initialTotal = initialProducts.reduce(
+      (sum, p) => sum + (p.pricePerUnit * p.quantity),
+      0
+    );
+
     setResponseForm({
-      customPrice: initialTotal,
-      products: initialProducts,
+      customPrice:      initialTotal,
+      products:         initialProducts,
       deliveryTimeline: '',
-      quoteExpiryDate: '',
-      message: ''
+      quoteExpiryDate:  '',
+      message:          '',
     });
     
     if (quote.status === 'Sent') {
@@ -132,6 +178,11 @@ const QuotesInboxTab = () => {
     }
   };
 
+  const handleOpenResponse = async (quote) => {
+    setIsResponseModalOpen(true);
+    await handleOpenQuote(quote);
+  };
+
   if (loading) return <div className="p-8 text-center text-slate-400 font-bold">Loading Quote Requests...</div>;
 
   return (
@@ -144,7 +195,7 @@ const QuotesInboxTab = () => {
             quote={quote} 
             isSelected={selectedQuote?._id === quote._id}
             onOpen={() => handleOpenQuote(quote)}
-            onRespond={() => { setSelectedQuote(quote); setIsResponseModalOpen(true); }}
+            onRespond={() => handleOpenResponse(quote)}
           />
         )) : (
           <div className="py-20 text-center bg-white dark:bg-slate-900 rounded-[40px] border-2 border-dashed border-slate-200 dark:border-slate-800">
@@ -352,8 +403,18 @@ const QuoteCard = ({ quote, isSelected, onOpen, onRespond }) => {
                    <h5 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Requested Products</h5>
                    {quote.products.map((p, i) => (
                      <div key={i} className="flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-100 dark:border-slate-800">
-                        <span className="text-sm font-bold text-primary dark:text-blue-100 truncate pr-2">{p.productName}</span>
-                        <span className="text-xs font-black text-accent shrink-0">{p.quantity} {p.unit}</span>
+                        <div className="flex items-center gap-2 pr-2 overflow-hidden">
+                           <span className="text-sm font-bold text-primary dark:text-blue-100 truncate">{p.productName}</span>
+                           {p.isDeal && (
+                              <span className="text-[8px] font-black uppercase px-1.5 py-0.5 bg-green-500 text-white rounded-md shrink-0">Deal</span>
+                           )}
+                        </div>
+                        <div className="flex flex-col items-end shrink-0">
+                           <span className="text-xs font-black text-accent">{p.quantity} {p.unit}</span>
+                           {p.isDeal && p.dealPrice && (
+                              <span className="text-[10px] font-bold text-green-600">₹{p.dealPrice}/unit</span>
+                           )}
+                        </div>
                      </div>
                    ))}
                 </div>

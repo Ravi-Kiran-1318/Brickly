@@ -74,7 +74,8 @@ exports.sendQuoteRequest = async (req, res) => {
       type: 'Quote',
       title: 'New Quote Request',
       message: 'A contractor has sent you a new quote request.',
-      relatedId: quote._id
+      relatedId: quote._id,
+      actionTab: 'Quote Requests'
     });
     await notification.save();
 
@@ -171,7 +172,8 @@ exports.acceptQuote = async (req, res) => {
       userId: order.dealerId,
       type: 'Order',
       title: 'New Order Received',
-      message: `${contractor.companyName || contractor.name} has confirmed an order.`
+      message: `${contractor.companyName || contractor.name} has confirmed an order.`,
+      actionTab: 'Orders'
     });
     await notification.save();
 
@@ -211,7 +213,8 @@ exports.acceptQuote = async (req, res) => {
 exports.getMyOrders = async (req, res) => {
   try {
     const orders = await Order.find({ contractorId: req.user.id })
-      .populate('dealerId', 'shopName')
+      .populate('dealerId', 'shopName location')
+      .populate('contractorId', 'name companyName phone location')
       .sort({ createdAt: -1 });
     res.json(orders);
   } catch (error) {

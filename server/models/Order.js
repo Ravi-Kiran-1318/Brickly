@@ -21,6 +21,9 @@ const orderSchema = new mongoose.Schema({
     default: 'Pending' 
   },
   expectedDeliveryDate: { type: Date },
+  isReviewed: { type: Boolean, default: false },
+  deliveredAt: { type: Date },
+  reviewDeadline: { type: Date },
   createdAt: { type: Date, default: Date.now }
 });
 

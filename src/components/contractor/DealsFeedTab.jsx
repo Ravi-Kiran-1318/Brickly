@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import api from '../../api';
-import { IconTag, IconMapPin, IconBuildingStore, IconClock, IconFlame } from '@tabler/icons-react';
+import { IconTag, IconMapPin, IconBuildingStore, IconClock, IconFlame, IconPackage } from '@tabler/icons-react';
 import { motion } from 'framer-motion';
 import DealerProfileModal from './DealerProfileModal';
 import toast from 'react-hot-toast';
@@ -24,7 +24,12 @@ const DealsFeedTab = () => {
       setInitialProduct({
         productId: deal.productId || '', 
         productName: deal.productName,
-        unit: deal.unit || 'unit'
+        unit: deal.unit || 'unit',
+        minQuantity: deal.minimumQuantity || 1,
+        isDeal: true,
+        dealId: deal._id,
+        dealPrice: deal.discountedPrice,
+        unitPrice: deal.originalPrice
       });
       setSelectedDealer(res.data);
     } catch (err) {
@@ -58,12 +63,16 @@ const DealsFeedTab = () => {
                </div>
                <h3 className="text-xl font-black text-primary dark:text-white uppercase mb-4 leading-tight">{deal.productName}</h3>
                
-               <div className="flex items-end gap-3 mb-6">
+               <div className="flex items-end gap-3 mb-2">
                   <span className="text-3xl font-black text-accent">₹{deal.discountedPrice}</span>
                   <span className="text-sm text-slate-400 line-through font-bold mb-1">₹{deal.originalPrice}</span>
                   <span className="text-xs font-black text-green-500 bg-green-50 px-2 py-1 rounded-lg">
                     {Math.round(((deal.originalPrice - deal.discountedPrice)/deal.originalPrice)*100)}% OFF
                   </span>
+               </div>
+               {/* MOQ — Minimum Order Quantity */}
+               <div className="flex items-center gap-2 text-xs font-bold text-orange-500 bg-orange-50 p-2 rounded-lg mb-6 w-max">
+                 <IconPackage size={16}/> Min. Order: {deal.minimumQuantity} {deal.unit || 'units'} required
                </div>
                
                <div className="space-y-3 mb-8">

@@ -75,7 +75,6 @@ const ProfessionalDashboard = () => {
     { label: 'Job Feed', icon: IconBriefcase },
     { label: 'My Availability', icon: IconCalendarEvent },
     { label: 'Applications', icon: IconClipboardText },
-    { label: 'Notifications', icon: IconBell, badge: unreadCount > 0 },
   ];
 
   const renderActiveTab = () => {
@@ -83,7 +82,7 @@ const ProfessionalDashboard = () => {
       case 'Job Feed': return <JobsFeedTab />;
       case 'My Availability': return <AvailabilityTab />;
       case 'Applications': return <ApplicationsTab />;
-      case 'Notifications': return <NotificationsTab setUnreadCount={setUnreadCount} />;
+      case 'Notifications': return <NotificationsTab setUnreadCount={setUnreadCount} setActiveTab={setActiveTab} />;
       default: return <JobsFeedTab />;
     }
   };
@@ -147,13 +146,6 @@ const ProfessionalDashboard = () => {
         </nav>
 
         <div className="p-4 space-y-2 border-t border-white/5">
-          <button 
-            onClick={() => { logout(); navigate('/login'); }}
-            className="w-full flex items-center gap-3 p-3 rounded-xl text-red-300/60 hover:bg-red-500/10 hover:text-red-400 transition-all font-bold"
-          >
-            <IconLogout size={22} />
-            {isSidebarOpen && <span className="text-sm font-bold">Log Out</span>}
-          </button>
         </div>
       </motion.aside>
 
@@ -171,6 +163,9 @@ const ProfessionalDashboard = () => {
               <button onClick={() => setActiveTab('Notifications')} className="p-2 relative hover:bg-white/5 rounded-xl transition-all group">
                <IconBell size={24} className={`group-hover:scale-110 transition-transform ${unreadCount > 0 ? 'animate-[blink_1s_ease-in-out_infinite] text-accent' : 'text-slate-400'}`} style={{ color: unreadCount > 0 ? 'var(--accent)' : 'var(--text-secondary)' }} />
                {unreadCount > 0 && <span className="absolute top-2 right-2 w-2.5 h-2.5 bg-orange-500 rounded-full border-2 border-white dark:border-slate-900" />}
+              </button>
+              <button onClick={() => { logout(); navigate('/login'); }} className="p-2 relative hover:bg-red-500/10 rounded-xl transition-all text-red-400 hover:text-red-500" title="Sign Out">
+               <IconLogout size={24} className="hover:scale-110 transition-transform" />
               </button>
           </div>
         </header>

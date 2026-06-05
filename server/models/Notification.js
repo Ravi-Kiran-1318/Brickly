@@ -11,6 +11,7 @@ const notificationSchema = new mongoose.Schema({
   message: { type: String, required: true },
   isRead: { type: Boolean, default: false },
   relatedId: { type: String }, // Links to Job ID, Order ID, etc.
+  actionTab: { type: String, default: '' },
   createdAt: { type: Date, default: Date.now }
 });
 

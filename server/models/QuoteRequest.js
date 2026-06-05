@@ -7,7 +7,11 @@ const quoteRequestSchema = new mongoose.Schema({
     productId: { type: mongoose.Schema.Types.ObjectId, ref: 'Product' },
     productName: String,
     quantity: Number,
-    unit: String
+    unit: String,
+    isDeal: { type: Boolean, default: false },
+    dealId: { type: mongoose.Schema.Types.ObjectId, ref: 'Deal' },
+    dealPrice: { type: Number },
+    unitPrice: { type: Number }
   }],
   deliveryAddress: { type: String, required: true },
   projectTimeline: { type: String },

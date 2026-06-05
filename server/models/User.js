@@ -36,6 +36,11 @@ const userSchema = new mongoose.Schema({
   shopName: { type: String },
   categories: [{ type: String }],
   gstNumber: { type: String },
+  averageRating: { type: Number, default: 0 },
+  totalReviews: { type: Number, default: 0 },
+  averageProductQuality: { type: Number, default: 0 },
+  averageDeliverySpeed: { type: Number, default: 0 },
+  averageCommunication: { type: Number, default: 0 },
 
   // Professional specific
   jobRole: { type: String },

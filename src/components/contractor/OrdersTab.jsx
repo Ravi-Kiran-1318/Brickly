@@ -1,10 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import api from '../../api';
-import { IconTruck, IconPackage, IconChevronRight, IconCircleCheck, IconCircleDashed } from '@tabler/icons-react';
+import { IconTruck, IconPackage, IconChevronRight, IconCircleCheck, IconCircleDashed, IconMap2, IconStarFilled, IconX, IconLoader2 } from '@tabler/icons-react';
+import RouteMap from '../RouteMap';
+import { motion, AnimatePresence } from 'framer-motion';
+import toast from 'react-hot-toast';
 
 const OrdersTab = () => {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [openMapOrderId, setOpenMapOrderId] = useState(null);
+  const [reviewModalOrder, setReviewModalOrder] = useState(null);
 
   useEffect(() => {
     api.get('/api/contractor/orders').then(res => {
@@ -12,6 +17,12 @@ const OrdersTab = () => {
       setLoading(false);
     });
   }, []);
+
+  const hasValidLocations = (o) => {
+    const dl = o.dealerId?.location?.coordinates;
+    const cl = o.contractorId?.location?.coordinates;
+    return dl && dl.length === 2 && dl[0] !== 0 && cl && cl.length === 2 && cl[0] !== 0;
+  };
 
   return (
     <div className="space-y-8">
@@ -53,6 +64,27 @@ const OrdersTab = () => {
                         );
                       })}
                    </div>
+                   
+                   {o.status === 'Delivered' && (
+                     <div className="w-full mt-6">
+                       {o.isReviewed ? (
+                         <div className="w-full flex items-center justify-center gap-2 bg-green-50 dark:bg-green-900/20 text-green-600 px-4 py-3 rounded-2xl font-black text-sm uppercase tracking-widest border border-green-200 dark:border-green-800/30">
+                           <IconCircleCheck size={18} /> Reviewed
+                         </div>
+                       ) : new Date() > new Date(o.reviewDeadline) ? (
+                         <div className="w-full text-center bg-slate-100 dark:bg-slate-800 text-slate-500 px-4 py-3 rounded-2xl font-black text-xs uppercase tracking-widest">
+                           Review Window Closed
+                         </div>
+                       ) : (
+                         <button 
+                           onClick={() => setReviewModalOrder(o)}
+                           className="w-full bg-accent text-white px-4 py-3 rounded-2xl font-black text-sm uppercase tracking-widest hover:shadow-lg hover:shadow-orange-500/20 transition-all active:scale-95"
+                         >
+                           Leave a Review
+                         </button>
+                       )}
+                     </div>
+                   )}
                 </div>
 
                 <button className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-400 hover:text-primary transition-all">
@@ -62,13 +94,24 @@ const OrdersTab = () => {
              
              {/* Order Footer */}
              <div className="px-8 py-5 bg-slate-50 dark:bg-slate-900/50 border-t border-slate-100 dark:border-slate-800 flex flex-col gap-4">
-                 <div className="flex flex-wrap items-center justify-between text-xs font-bold text-slate-500 uppercase tracking-widest">
-                    <span>Ordered: {new Date(o.createdAt).toLocaleDateString()}</span>
-                    <div className="text-right">
-                       <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 block mb-1">Total Order Amount</span>
-                       <span className="text-xl font-black text-accent">₹{o.totalAmount?.toLocaleString() || 'N/A'}</span>
-                    </div>
-                 </div>
+                  <div className="flex flex-wrap items-center justify-between text-xs font-bold text-slate-500 uppercase tracking-widest gap-4">
+                     <span>Ordered: {new Date(o.createdAt).toLocaleDateString()}</span>
+                     <div className="flex items-center gap-6 text-right">
+                        {hasValidLocations(o) && (
+                          <button 
+                            onClick={() => setOpenMapOrderId(openMapOrderId === o._id ? null : o._id)}
+                            className="flex items-center gap-1.5 px-3 py-2 bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400 rounded-xl hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors"
+                          >
+                            <IconMap2 size={16} />
+                            {openMapOrderId === o._id ? 'Hide Route' : 'View Route'}
+                          </button>
+                        )}
+                        <div>
+                           <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 block mb-1">Total Order Amount</span>
+                           <span className="text-xl font-black text-accent">₹{o.totalAmount?.toLocaleString() || 'N/A'}</span>
+                        </div>
+                     </div>
+                  </div>
                  <div className="space-y-3">
                     <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">
                        <span>Item Details</span>
@@ -94,6 +137,20 @@ const OrdersTab = () => {
                       </div>
                     ))}
                  </div>
+
+                  {openMapOrderId === o._id && (
+                     <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800">
+                       <h4 className="text-xs font-black uppercase tracking-widest text-slate-500 mb-4 flex items-center gap-2">
+                         <IconMap2 size={16} /> Delivery Route
+                       </h4>
+                       <RouteMap 
+                         dealerLocation={o.dealerId?.location} 
+                         contractorLocation={o.contractorId?.location}
+                         dealerName={o.dealerId?.shopName}
+                         contractorName={o.contractorId?.name || o.contractorId?.companyName}
+                       />
+                     </div>
+                  )}
              </div>
           </div>
         )) : (
@@ -106,6 +163,118 @@ const OrdersTab = () => {
           </div>
         )}
       </div>
+
+      <AnimatePresence>
+        {reviewModalOrder && (
+          <LeaveReviewModal 
+            order={reviewModalOrder} 
+            onClose={() => setReviewModalOrder(null)} 
+            onSuccess={(review) => {
+              setOrders(orders.map(o => o._id === reviewModalOrder._id ? { ...o, isReviewed: true } : o));
+              setReviewModalOrder(null);
+            }} 
+          />
+        )}
+      </AnimatePresence>
+    </div>
+  );
+};
+
+const LeaveReviewModal = ({ order, onClose, onSuccess }) => {
+  const [ratings, setRatings] = useState({ productQuality: 0, deliverySpeed: 0, communication: 0 });
+  const [reviewText, setReviewText] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const overallRating = Math.round((ratings.productQuality + ratings.deliverySpeed + ratings.communication) / 3) || 0;
+
+  const handleSubmit = async () => {
+    if (ratings.productQuality === 0 || ratings.deliverySpeed === 0 || ratings.communication === 0) {
+      return toast.error("Please provide all three ratings");
+    }
+    if (reviewText.length < 20) {
+      return toast.error("Review text must be at least 20 characters");
+    }
+    setSubmitting(true);
+    try {
+      const res = await api.post('/api/reviews', {
+        orderId: order._id,
+        productQualityRating: ratings.productQuality,
+        deliverySpeedRating: ratings.deliverySpeed,
+        communicationRating: ratings.communication,
+        reviewText
+      });
+      toast.success("Review submitted successfully");
+      onSuccess(res.data);
+    } catch (err) {
+      toast.error(err.response?.data?.message || "Failed to submit review");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const StarRow = ({ label, value, onChange }) => (
+    <div className="flex items-center justify-between">
+      <span className="text-sm font-black uppercase tracking-widest text-slate-400">{label}</span>
+      <div className="flex gap-1">
+        {[1,2,3,4,5].map(star => (
+          <button key={star} onClick={() => onChange(star)} className={`p-1 transition-transform hover:scale-110 ${star <= value ? 'text-orange-400' : 'text-slate-200 dark:text-slate-700'}`}>
+            <IconStarFilled size={24} />
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose} className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" />
+      <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-[40px] shadow-2xl relative z-10 overflow-hidden flex flex-col max-h-[90vh]">
+        <div className="p-8 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-800/50">
+          <div>
+            <h3 className="text-2xl font-black text-primary dark:text-white uppercase tracking-tight">Leave a Review</h3>
+            <p className="text-xs font-bold text-slate-400 mt-1 uppercase tracking-widest">{order.dealerId?.shopName}</p>
+          </div>
+          <button onClick={onClose} className="p-2 bg-white dark:bg-slate-800 rounded-full text-slate-400 hover:text-primary dark:hover:text-white shadow-sm"><IconX size={20} /></button>
+        </div>
+        
+        <div className="p-8 overflow-y-auto space-y-8">
+          <div className="space-y-6 bg-slate-50 dark:bg-slate-800/50 p-6 rounded-3xl border border-slate-100 dark:border-slate-700/50">
+             <StarRow label="Product Quality" value={ratings.productQuality} onChange={v => setRatings({...ratings, productQuality: v})} />
+             <StarRow label="Delivery Speed" value={ratings.deliverySpeed} onChange={v => setRatings({...ratings, deliverySpeed: v})} />
+             <StarRow label="Communication" value={ratings.communication} onChange={v => setRatings({...ratings, communication: v})} />
+          </div>
+
+          <div className="text-center py-4">
+             <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 block mb-2">Overall Rating</span>
+             <div className="flex justify-center gap-2">
+                {[1,2,3,4,5].map(star => (
+                  <IconStarFilled key={star} size={36} className={`${star <= overallRating ? 'text-accent' : 'text-slate-200 dark:text-slate-800'}`} />
+                ))}
+             </div>
+          </div>
+
+          <div>
+             <textarea 
+               value={reviewText} onChange={e => setReviewText(e.target.value)} maxLength={500}
+               placeholder="Share your experience with this dealer..."
+               className="w-full h-32 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl p-4 focus:ring-2 focus:ring-accent transition-all dark:text-white resize-none text-sm font-medium"
+             />
+             <div className="flex justify-between mt-2 px-2 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                <span className={reviewText.length < 20 && reviewText.length > 0 ? "text-red-400" : ""}>Min 20 chars</span>
+                <span>{reviewText.length} / 500</span>
+             </div>
+          </div>
+        </div>
+
+        <div className="p-6 border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900">
+           <button 
+             onClick={handleSubmit} disabled={submitting}
+             className="w-full bg-accent text-white py-4 rounded-2xl font-black uppercase tracking-widest hover:shadow-lg hover:shadow-orange-500/20 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+           >
+             {submitting ? <IconLoader2 className="animate-spin" /> : 'Submit Review'}
+           </button>
+        </div>
+      </motion.div>
     </div>
   );
 };

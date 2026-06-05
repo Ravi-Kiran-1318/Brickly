@@ -5,6 +5,7 @@ const QuoteResponse = require('../models/QuoteResponse');
 const Order = require('../models/Order');
 const Deal = require('../models/Deal');
 const Notification = require('../models/Notification');
+const DealerReview = require('../models/DealerReview');
 const { sendMail } = require('../utils/mailer');
 
 // --- Profile ---
@@ -38,18 +39,26 @@ exports.updateProfile = async (req, res) => {
 
 exports.getStats = async (req, res) => {
   try {
-    const [totalProducts, totalQuoteRequests, totalActiveOrders, totalActiveDeals] = await Promise.all([
+    const [totalProducts, totalQuoteRequests, totalActiveOrders, totalActiveDeals, user] = await Promise.all([
       Product.countDocuments({ dealerId: req.user.id }),
       QuoteRequest.countDocuments({ dealerId: req.user.id }),
       Order.countDocuments({ dealerId: req.user.id, status: { $ne: 'Delivered' } }),
-      Deal.countDocuments({ dealerId: req.user.id, validUntil: { $gte: new Date() } })
+      Deal.countDocuments({ dealerId: req.user.id, validUntil: { $gte: new Date() } }),
+      User.findById(req.user.id)
     ]);
 
     res.json({
       totalProducts,
       totalQuoteRequests,
       totalActiveOrders,
-      totalActiveDeals
+      totalActiveDeals,
+      ratings: {
+        averageRating: user.averageRating || 0,
+        totalReviews: user.totalReviews || 0,
+        averageProductQuality: user.averageProductQuality || 0,
+        averageDeliverySpeed: user.averageDeliverySpeed || 0,
+        averageCommunication: user.averageCommunication || 0
+      }
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -109,7 +118,8 @@ exports.updateProduct = async (req, res) => {
         userId: req.user.id,
         title: 'Low Stock Alert',
         message: `Product "${product.name}" is low on stock (${product.stockQuantity} remaining).`,
-        type: 'General'
+        type: 'General',
+        actionTab: 'Inventory'
       });
       await notification.save();
       io.to(`user:${req.user.id}`).emit('dealer:lowStock', notification);
@@ -252,7 +262,8 @@ exports.respondToQuote = async (req, res) => {
       userId: contractor._id,
       title: 'New Quote Response',
       message: `${dealer.shopName} has responded to your quote request for ${quoteRequest.projectType || 'materials'}.`,
-      type: 'Quote'
+      type: 'Quote',
+      actionTab: 'My Quotes'
     });
     await notification.save();
 
@@ -296,7 +307,8 @@ exports.getOrders = async (req, res) => {
   try {
     console.log('Fetching orders for dealerId:', req.user.id); // DEBUG LOG
     const orders = await Order.find({ dealerId: req.user.id })
-      .populate('contractorId', 'name companyName phone')
+      .populate('contractorId', 'name companyName phone location')
+      .populate('dealerId', 'location shopName')
       .sort({ createdAt: -1 });
     console.log(`Found ${orders.length} orders for dealer ${req.user.id}`); // DEBUG LOG
     res.json(orders);
@@ -315,6 +327,33 @@ exports.updateOrderStatus = async (req, res) => {
     if (status === 'Dispatched' && expectedDeliveryDate) {
       order.expectedDeliveryDate = expectedDeliveryDate;
     }
+    
+    if (status === 'Delivered') {
+      order.deliveredAt = new Date();
+      order.reviewDeadline = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+      
+      const io = req.app.get('io');
+      
+      // Send Email Reminder
+      const contractor = await User.findById(order.contractorId);
+      const dealer = await User.findById(order.dealerId);
+      
+      await sendMail(contractor.email, `Your order from ${dealer.shopName} has been delivered — Share your experience`, 
+        `Hi ${contractor.name},\n\nYour order #${order._id.toString().slice(-6)} from ${dealer.shopName} has been delivered successfully. \n\nPlease take a moment to share your experience by leaving a review on Brickly. You have 30 days to submit your review.\n\nThank you!`
+      );
+      
+      // Socket and Notification
+      const notification = new Notification({
+        userId: contractor._id,
+        title: 'Order Delivered',
+        message: `Your order from ${dealer.shopName} was delivered. Leave a review within 30 days.`,
+        type: 'Order',
+        actionTab: 'Orders'
+      });
+      await notification.save();
+      io.to(`user:${contractor._id}`).emit('contractor:reviewReminder', notification);
+    }
+    
     await order.save();
 
     const contractor = await User.findById(order.contractorId);
@@ -325,7 +364,8 @@ exports.updateOrderStatus = async (req, res) => {
       userId: contractor._id,
       title: 'Order Status Updated',
       message: `Your order from ${dealer.shopName} is now ${status}.`,
-      type: 'Order'
+      type: 'Order',
+      actionTab: 'Orders'
     });
     await notification.save();
 
@@ -459,12 +499,13 @@ exports.getPublicDealerProfile = async (req, res) => {
     const dealer = await User.findById(req.params.id).select('shopName categories location locationDetails address phone email gstNumber isVerified phoneVerified');
     if (!dealer) return res.status(404).json({ message: 'Dealer not found' });
     
-    const [products, activeDeals] = await Promise.all([
+    const [products, activeDeals, reviews] = await Promise.all([
       Product.find({ dealerId: req.params.id }).sort({ createdAt: -1 }),
-      Deal.find({ dealerId: req.params.id, validUntil: { $gte: new Date() } }).sort({ createdAt: -1 })
+      Deal.find({ dealerId: req.params.id, validUntil: { $gte: new Date() } }).sort({ createdAt: -1 }),
+      DealerReview.find({ dealerId: req.params.id }).populate('contractorId', 'name companyName').sort({ createdAt: -1 })
     ]);
 
-    res.json({ dealer, products, activeDeals });
+    res.json({ dealer, products, activeDeals, reviews });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

@@ -3,8 +3,9 @@ import api from '../../api';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   IconTruck, IconPackage, IconUser, IconCircleCheck, 
-  IconClock, IconMapPin, IconCalendar, IconChevronRight, IconArrowRight
+  IconClock, IconMapPin, IconCalendar, IconChevronRight, IconArrowRight, IconMap2
 } from '@tabler/icons-react';
+import RouteMap from '../RouteMap';
 
 const ORDER_STATUSES = ['Pending', 'Confirmed', 'Dispatched', 'Delivered'];
 
@@ -12,6 +13,7 @@ const OrdersTab = () => {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [updatingOrderId, setUpdatingOrderId] = useState(null);
+  const [openMapOrderId, setOpenMapOrderId] = useState(null);
   
   const [statusModal, setStatusModal] = useState({
     isOpen: false,
@@ -69,6 +71,8 @@ const OrdersTab = () => {
             key={order._id} 
             order={order} 
             onUpdateStatus={() => openStatusModal(order)}
+            isOpenMap={openMapOrderId === order._id}
+            onToggleMap={() => setOpenMapOrderId(openMapOrderId === order._id ? null : order._id)}
           />
         )) : (
           <div className="py-20 text-center bg-white dark:bg-slate-900 rounded-[40px] border-2 border-dashed border-slate-200 dark:border-slate-800">
@@ -145,8 +149,14 @@ const OrdersTab = () => {
   );
 };
 
-const OrderCard = ({ order, onUpdateStatus }) => {
+const OrderCard = ({ order, onUpdateStatus, isOpenMap, onToggleMap }) => {
   const currentStatusIndex = ORDER_STATUSES.indexOf(order.status);
+
+  const hasValidLocations = () => {
+    const dl = order.dealerId?.location?.coordinates;
+    const cl = order.contractorId?.location?.coordinates;
+    return dl && dl.length === 2 && dl[0] !== 0 && cl && cl.length === 2 && cl[0] !== 0;
+  };
 
   return (
     <div className="bg-white dark:bg-slate-900 rounded-[40px] border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm hover:shadow-md transition-shadow">
@@ -190,6 +200,18 @@ const OrderCard = ({ order, onUpdateStatus }) => {
              )}
           </div>
         </div>
+        
+        {hasValidLocations() && (
+          <div className="flex justify-end mb-6 -mt-4">
+             <button 
+               onClick={onToggleMap}
+               className="flex items-center gap-1.5 px-4 py-2 bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400 rounded-xl hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors text-sm font-bold"
+             >
+               <IconMap2 size={18} />
+               {isOpenMap ? 'Hide Delivery Route' : 'View Delivery Route'}
+             </button>
+          </div>
+        )}
 
         {/* Status Line */}
         <div className="relative pt-10 pb-8 px-4">
@@ -250,6 +272,20 @@ const OrderCard = ({ order, onUpdateStatus }) => {
                </div>
            </div>
         </div>
+
+        {isOpenMap && (
+           <div className="mt-6 pt-6 border-t border-slate-100 dark:border-slate-800">
+             <h4 className="text-xs font-black uppercase tracking-widest text-slate-500 mb-4 flex items-center gap-2">
+               <IconMap2 size={16} /> Delivery Route
+             </h4>
+             <RouteMap 
+               dealerLocation={order.dealerId?.location} 
+               contractorLocation={order.contractorId?.location}
+               dealerName={order.dealerId?.shopName}
+               contractorName={order.contractorId?.name || order.contractorId?.companyName}
+             />
+           </div>
+        )}
       </div>
     </div>
   );

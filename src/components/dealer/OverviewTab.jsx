@@ -3,9 +3,10 @@ import api from '../../api';
 import { motion } from 'framer-motion';
 import { 
   IconPackage, IconFileInvoice, IconTruck, IconTag,
-  IconCircleCheck, IconAlertTriangle, IconChevronRight, IconTrendingUp
+  IconCircleCheck, IconAlertTriangle, IconChevronRight, IconTrendingUp, IconStarFilled, IconShieldCheck
 } from '@tabler/icons-react';
 import { useAuth } from '../../context/AuthContext';
+import socket from '../../socket';
 
 const StatCard = ({ icon: Icon, label, value, color }) => (
   <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 rounded-3xl shadow-sm hover:shadow-md transition-shadow">
@@ -46,6 +47,12 @@ const OverviewTab = ({ setActiveTab }) => {
       }
     };
     fetchOverview();
+
+    socket.on('dealer:newReview', fetchOverview);
+
+    return () => {
+      socket.off('dealer:newReview', fetchOverview);
+    };
   }, []);
 
   if (loading) return <div className="animate-pulse space-y-8">
@@ -69,6 +76,43 @@ const OverviewTab = ({ setActiveTab }) => {
           </div>
         )}
       </div>
+
+      {/* Rating Summary Card */}
+      {stats?.ratings && (
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-8 rounded-[32px] shadow-sm">
+           <div className="flex flex-col md:flex-row items-center gap-10">
+              <div className="text-center md:border-r border-slate-200 dark:border-slate-800 md:pr-10 shrink-0">
+                 <div className="flex items-center justify-center gap-2 text-accent mb-2">
+                    <IconStarFilled size={48} />
+                    <span className="text-6xl font-black">{stats.ratings.averageRating.toFixed(1)}</span>
+                 </div>
+                 <p className="text-sm font-bold text-slate-500 uppercase tracking-widest">{stats.ratings.totalReviews} Reviews</p>
+                 <div className="flex items-center justify-center gap-1 mt-3 bg-green-50 text-green-600 dark:bg-green-900/20 dark:text-green-400 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest">
+                    <IconShieldCheck size={14} /> Verified Purchases Only
+                 </div>
+              </div>
+
+              <div className="flex-1 w-full space-y-4">
+                 {[
+                   { label: 'Product Quality', value: stats.ratings.averageProductQuality },
+                   { label: 'Delivery Speed', value: stats.ratings.averageDeliverySpeed },
+                   { label: 'Communication', value: stats.ratings.averageCommunication }
+                 ].map((bar, i) => (
+                   <div key={i} className="flex items-center gap-4">
+                      <span className="w-32 text-xs font-black text-slate-400 uppercase tracking-widest">{bar.label}</span>
+                      <div className="flex-1 h-3 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                         <motion.div 
+                           initial={{ width: 0 }} animate={{ width: `${(bar.value / 5) * 100}%` }} 
+                           className="h-full bg-accent rounded-full"
+                         />
+                      </div>
+                      <span className="w-8 text-right text-sm font-black text-primary dark:text-white">{bar.value.toFixed(1)}</span>
+                   </div>
+                 ))}
+              </div>
+           </div>
+        </div>
+      )}
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">

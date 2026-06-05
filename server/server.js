@@ -10,6 +10,7 @@ const otpRoutes = require('./routes/otp');
 const contractorRoutes = require('./routes/contractor');
 const publicRoutes = require('./routes/public');
 const contractRoutes = require('./routes/contract');
+const reviewRoutes = require('./routes/reviewRoutes');
 const dealerRoutes = require('./routes/dealer');
 const professionalRoutes = require('./routes/professional');
 
@@ -72,6 +73,7 @@ app.use('/api/otp', otpRoutes);
 app.use('/api/contractor', contractorRoutes);
 app.use('/api/public', publicRoutes);
 app.use('/api/contracts', contractRoutes);
+app.use('/api/reviews', reviewRoutes);
 app.use('/api/dealer', dealerRoutes);
 app.use('/api/professional', professionalRoutes);
 

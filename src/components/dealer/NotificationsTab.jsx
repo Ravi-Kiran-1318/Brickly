@@ -6,7 +6,7 @@ import {
   IconTag, IconPackage, IconAlertTriangle, IconTruck
 } from '@tabler/icons-react';
 
-const NotificationsTab = ({ setUnreadCount }) => {
+const NotificationsTab = ({ setUnreadCount, setActiveTab }) => {
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -37,11 +37,16 @@ const NotificationsTab = ({ setUnreadCount }) => {
     }
   };
 
-  const markAsRead = async (id) => {
+  const handleNotificationClick = async (notification) => {
     try {
-      await api.put(`/api/dealer/notifications/${id}/read`);
-      setNotifications(notifications.map(n => n._id === id ? { ...n, isRead: true } : n));
-      setUnreadCount(prev => Math.max(0, prev - 1));
+      if (!notification.isRead) {
+        await api.put(`/api/dealer/notifications/${notification._id}/read`);
+        setNotifications(notifications.map(n => n._id === notification._id ? { ...n, isRead: true } : n));
+        setUnreadCount(prev => Math.max(0, prev - 1));
+      }
+      if (notification.actionTab && setActiveTab) {
+        setActiveTab(notification.actionTab);
+      }
     } catch (err) {
       console.error(err);
     }
@@ -92,7 +97,7 @@ const NotificationsTab = ({ setUnreadCount }) => {
               animate={{ x: 0, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
               key={n._id}
-              onClick={() => !n.isRead && markAsRead(n._id)}
+              onClick={() => handleNotificationClick(n)}
               className={`bg-white dark:bg-slate-900 p-5 rounded-3xl border border-slate-200 dark:border-slate-800 flex items-center justify-between group cursor-pointer transition-all ${
                 !n.isRead ? 'border-l-4 border-l-accent' : ''
               }`}

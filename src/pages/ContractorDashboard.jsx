@@ -72,11 +72,23 @@ const ContractorDashboard = () => {
         toast.success(data.notification?.title || "New Professional Available!", { icon: "👷" });
       });
 
+      socket.on('contractor:reviewReplyReceived', (data) => {
+        setUnreadCount(prev => prev + 1);
+        toast.success("Dealer replied to your review!", { icon: "💬" });
+      });
+
+      socket.on('contractor:reviewReminder', (data) => {
+        setUnreadCount(prev => prev + 1);
+        toast.success("Order Delivered! Don't forget to leave a review.", { icon: "⭐" });
+      });
+
       return () => {
         socket.off('contractor:newInterestRequest');
         socket.off('contractor:newQuoteResponse');
         socket.off('contractor:orderStatusUpdate');
         socket.off('contractor:newAvailability');
+        socket.off('contractor:reviewReplyReceived');
+        socket.off('contractor:reviewReminder');
         socket.disconnect();
       };
     }
@@ -98,7 +110,6 @@ const ContractorDashboard = () => {
     { label: 'Orders', icon: IconTruck },
     { label: 'Deals Feed', icon: IconTag },
     { label: 'Project Progress', icon: IconHammer },
-    { label: 'Notifications', icon: IconBell, badge: unreadCount > 0 },
   ];
 
   const renderActiveTab = () => {
@@ -113,7 +124,7 @@ const ContractorDashboard = () => {
       case 'Orders': return <OrdersTab />;
       case 'Deals Feed': return <DealsFeedTab />;
       case 'Project Progress': return <ContractsTab tabData={tabData} setTabData={setTabData} />;
-      case 'Notifications': return <NotificationsTab setUnreadCount={setUnreadCount} />;
+      case 'Notifications': return <NotificationsTab setUnreadCount={setUnreadCount} setActiveTab={changeTab} />;
       default: return <OverviewTab setActiveTab={changeTab} />;
     }
   };
@@ -181,15 +192,7 @@ const ContractorDashboard = () => {
           ))}
         </nav>
 
-        {/* Footer */}
         <div className="p-4 space-y-2 border-t border-white/5">
-          <button 
-            onClick={() => { logout(); navigate('/login'); }}
-            className="w-full flex items-center gap-3 p-3 rounded-xl text-red-300/60 hover:bg-red-500/10 hover:text-red-400 transition-all font-bold"
-          >
-            <IconLogout size={22} />
-            {isSidebarOpen && <span className="text-sm font-bold">Log Out</span>}
-          </button>
         </div>
       </motion.aside>
 
@@ -209,6 +212,9 @@ const ContractorDashboard = () => {
              <button onClick={() => setActiveTab('Notifications')} className="p-2 relative hover:bg-white/5 rounded-xl transition-all">
                <IconBell size={24} className={`group-hover:scale-110 transition-transform ${unreadCount > 0 ? 'animate-[blink_1s_ease-in-out_infinite] text-accent' : ''}`} style={{ color: unreadCount > 0 ? 'var(--accent)' : 'var(--text-secondary)' }} />
                {unreadCount > 0 && <span className="absolute top-2 right-2 w-2.5 h-2.5 bg-orange-500 rounded-full border-2" style={{ borderColor: 'var(--bg-primary)' }} />}
+             </button>
+             <button onClick={() => { logout(); navigate('/login'); }} className="p-2 relative hover:bg-red-500/10 rounded-xl transition-all text-red-400 hover:text-red-500" title="Sign Out">
+               <IconLogout size={24} className="hover:scale-110 transition-transform" />
              </button>
           </div>
         </header>

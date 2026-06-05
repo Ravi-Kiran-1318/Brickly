@@ -3,7 +3,7 @@ import api from '../../api';
 import toast from 'react-hot-toast';
 import { IconBell, IconCheck, IconTrash, IconCircle } from '@tabler/icons-react';
 
-const NotificationsTab = ({ setUnreadCount }) => {
+const NotificationsTab = ({ setUnreadCount, setActiveTab }) => {
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -34,6 +34,20 @@ const NotificationsTab = ({ setUnreadCount }) => {
     } catch (err) { }
   };
 
+  const handleNotificationClick = async (notification) => {
+    try {
+      if (!notification.isRead) {
+        await api.put(`/api/contractor/notifications/${notification._id}/read`);
+        fetchNotifications();
+      }
+      if (notification.actionTab && setActiveTab) {
+        setActiveTab(notification.actionTab);
+      }
+    } catch (err) {
+      console.error('Error handling notification click:', err);
+    }
+  };
+
   const handleDelete = async (id) => {
     try {
       await api.delete(`/api/contractor/notifications/${id}`);
@@ -58,7 +72,7 @@ const NotificationsTab = ({ setUnreadCount }) => {
         ) : notifications.length > 0 ? notifications.map((n) => (
           <div 
             key={n._id} 
-            onClick={() => !n.isRead && handleReadOne(n._id)}
+            onClick={() => handleNotificationClick(n)}
             className={`p-6 rounded-[24px] border transition-all flex items-start gap-4 group cursor-pointer ${
               n.isRead ? 'bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800' : 'bg-blue-50 dark:bg-blue-900/10 border-blue-100 shadow-md shadow-blue-500/5'
             }`}

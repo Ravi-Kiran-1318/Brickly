@@ -29,7 +29,8 @@ exports.createJob = async (req, res) => {
         type: 'General',
         title: 'New Job Matching Your Role!',
         message: `${contractor.companyName || contractor.name} posted a new job vacancy for "${job.jobRole}" in ${job.workLocation}.`,
-        relatedId: job._id
+        relatedId: job._id,
+        actionTab: 'Job Feed'
       });
       await notification.save();
 
@@ -112,7 +113,8 @@ exports.hireProfessional = async (req, res) => {
     type: 'Hire',
     title: 'You are Hired!',
     message: `A contractor has hired you for the role of ${job.jobRole}.`,
-    relatedId: job._id
+    relatedId: job._id,
+    actionTab: 'My Availability'
   });
   await notification.save();
 

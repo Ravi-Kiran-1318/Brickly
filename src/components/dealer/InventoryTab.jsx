@@ -19,7 +19,7 @@ const InventoryTab = () => {
   const [formData, setFormData] = useState({
     name: '', category: 'Cement', brand: '', unit: '',
     pricePerUnit: '', minimumOrderQuantity: '', stockQuantity: '',
-    lowStockThreshold: '', description: '', inStock: true
+    lowStockThreshold: '', description: '', inStock: true, size: ''
   });
   const [image, setImage] = useState(null);
   const [preview, setPreview] = useState(null);
@@ -51,7 +51,7 @@ const InventoryTab = () => {
     setFormData({
       name: '', category: 'Cement', brand: '', unit: '',
       pricePerUnit: '', minimumOrderQuantity: '', stockQuantity: '',
-      lowStockThreshold: '', description: '', inStock: true
+      lowStockThreshold: '', description: '', inStock: true, size: ''
     });
     setImage(null);
     setPreview(null);
@@ -101,9 +101,10 @@ const InventoryTab = () => {
     setEditingProduct(p);
     setFormData({
       name: p.name, category: p.category, brand: p.brand || '', unit: p.unit,
-      pricePerUnit: p.pricePerUnit, minimumOrderQuantity: p.minimumOrderQuantity,
-      stockQuantity: p.stockQuantity, lowStockThreshold: p.lowStockThreshold,
-      description: p.description || '', inStock: p.inStock
+      pricePerUnit: p.pricePerUnit || '', minimumOrderQuantity: p.minimumOrderQuantity || '',
+      stockQuantity: p.stockQuantity !== undefined && p.stockQuantity !== null ? p.stockQuantity : '', 
+      lowStockThreshold: p.lowStockThreshold !== undefined && p.lowStockThreshold !== null ? p.lowStockThreshold : '',
+      description: p.description || '', inStock: p.inStock, size: p.size || ''
     });
     setPreview(p.imageUrl);
     setIsFormOpen(true);
@@ -189,6 +190,14 @@ const InventoryTab = () => {
                       type="text" placeholder="e.g. UltraTech"
                       className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-2xl p-4 focus:ring-2 focus:ring-accent transition-all dark:text-white"
                       value={formData.brand} onChange={(e) => setFormData({...formData, brand: e.target.value})}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-black uppercase tracking-widest text-slate-400 mb-2">Size / Dimensions</label>
+                    <input 
+                      type="text" placeholder={formData.category === 'Steel' ? 'e.g. 12mm' : formData.category === 'Cement' ? 'e.g. 50kg' : formData.category === 'Tiles' ? 'e.g. 2x2 ft' : 'e.g. Large, 10mm'}
+                      className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-2xl p-4 focus:ring-2 focus:ring-accent transition-all dark:text-white"
+                      value={formData.size} onChange={(e) => setFormData({...formData, size: e.target.value})}
                     />
                   </div>
                   <div>
@@ -323,7 +332,7 @@ const ProductCard = ({ product, onEdit, onDelete, onToggleStock }) => {
 
       <div className="p-5 space-y-4">
         <div>
-          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{product.category} • {product.brand}</span>
+          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{product.category} • {product.brand}{product.size ? ` • ${product.size}` : ''}</span>
           <h4 className="font-black text-primary dark:text-white truncate mt-1">{product.name}</h4>
         </div>
 

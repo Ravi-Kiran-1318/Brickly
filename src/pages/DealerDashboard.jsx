@@ -8,7 +8,7 @@ import toast, { Toaster } from 'react-hot-toast';
 import { 
   IconLayoutDashboard, IconPackage, IconFileInvoice, IconTruck, 
   IconTag, IconBell, IconLogout, IconMenu2, IconX,
-  IconSun, IconMoon, IconBuildingStore
+  IconSun, IconMoon, IconBuildingStore, IconStar
 } from '@tabler/icons-react';
 import { useTheme } from '../context/ThemeContext';
 import ThemeToggle from '../components/ThemeToggle';
@@ -18,6 +18,7 @@ import InventoryTab from '../components/dealer/InventoryTab';
 import QuotesInboxTab from '../components/dealer/QuotesInboxTab';
 import OrdersTab from '../components/dealer/OrdersTab';
 import DealsTab from '../components/dealer/DealsTab';
+import ReviewsTab from '../components/dealer/ReviewsTab';
 import NotificationsTab from '../components/dealer/NotificationsTab';
 
 const DealerDashboard = () => {
@@ -54,9 +55,15 @@ const DealerDashboard = () => {
         toast.error("Low Stock Alert!", { icon: "⚠️" });
       });
 
+      socket.on('dealer:newReview', (data) => {
+        setUnreadCount(prev => prev + 1);
+        toast.success("You received a new review!", { icon: "⭐" });
+      });
+
       return () => {
         socket.off('dealer:newQuoteRequest');
         socket.off('dealer:lowStock');
+        socket.off('dealer:newReview');
         socket.disconnect();
       };
     }
@@ -68,7 +75,7 @@ const DealerDashboard = () => {
     { label: 'Quote Requests', icon: IconFileInvoice },
     { label: 'Orders', icon: IconTruck },
     { label: 'Deals Board', icon: IconTag },
-    { label: 'Notifications', icon: IconBell, badge: unreadCount > 0 },
+    { label: 'Reviews', icon: IconStar },
   ];
 
   const renderActiveTab = () => {
@@ -78,7 +85,8 @@ const DealerDashboard = () => {
       case 'Quote Requests': return <QuotesInboxTab />;
       case 'Orders': return <OrdersTab />;
       case 'Deals Board': return <DealsTab />;
-      case 'Notifications': return <NotificationsTab setUnreadCount={setUnreadCount} />;
+      case 'Reviews': return <ReviewsTab />;
+      case 'Notifications': return <NotificationsTab setUnreadCount={setUnreadCount} setActiveTab={setActiveTab} />;
       default: return <OverviewTab setActiveTab={setActiveTab} />;
     }
   };
@@ -142,13 +150,6 @@ const DealerDashboard = () => {
         </nav>
 
         <div className="p-4 space-y-2 border-t border-white/5">
-          <button 
-            onClick={() => { logout(); navigate('/login'); }}
-            className="w-full flex items-center gap-3 p-3 rounded-xl text-red-300/60 hover:bg-red-500/10 hover:text-red-400 transition-all font-bold"
-          >
-            <IconLogout size={22} />
-            {isSidebarOpen && <span className="text-sm font-bold">Log Out</span>}
-          </button>
         </div>
       </motion.aside>
 
@@ -166,6 +167,9 @@ const DealerDashboard = () => {
               <button onClick={() => setActiveTab('Notifications')} className="p-2 relative hover:bg-white/5 rounded-xl transition-all group">
                <IconBell size={24} className={`group-hover:scale-110 transition-transform ${unreadCount > 0 ? 'animate-[blink_1s_ease-in-out_infinite] text-accent' : 'text-slate-400'}`} style={{ color: unreadCount > 0 ? 'var(--accent)' : 'var(--text-secondary)' }} />
                {unreadCount > 0 && <span className="absolute top-2 right-2 w-2.5 h-2.5 bg-orange-500 rounded-full border-2 border-white dark:border-slate-900" />}
+              </button>
+              <button onClick={() => { logout(); navigate('/login'); }} className="p-2 relative hover:bg-red-500/10 rounded-xl transition-all text-red-400 hover:text-red-500" title="Sign Out">
+               <IconLogout size={24} className="hover:scale-110 transition-transform" />
               </button>
           </div>
         </header>
