@@ -19,7 +19,13 @@ const jobPostSchema = new mongoose.Schema({
     appliedAt: { type: Date, default: Date.now }
   }],
   isFilled: { type: Boolean, default: false },
+  workSiteLocation: {
+    type: { type: String, default: 'Point' },
+    coordinates: { type: [Number], index: '2dsphere' } // [longitude, latitude]
+  },
   createdAt: { type: Date, default: Date.now }
 });
+
+jobPostSchema.index({ workSiteLocation: '2dsphere' });
 
 module.exports = mongoose.model('JobPost', jobPostSchema);

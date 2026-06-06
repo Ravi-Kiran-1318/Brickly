@@ -40,6 +40,13 @@ router.put('/availability/toggle', professionalController.toggleVisibility);
 
 // Applications
 router.get('/applications', professionalController.getMyApplications);
+router.post('/applications/:id/join', professionalController.joinJob);
+
+// Reviews
+const profReviewController = require('../controllers/professionalReviewController');
+router.get('/my-reviews', profReviewController.getMyReviews);
+router.put('/reviews/:id/reply', profReviewController.replyToReview);
+router.put('/reviews/:id/report', profReviewController.reportReview);
 
 // Notifications
 router.get('/notifications', professionalController.getNotifications);

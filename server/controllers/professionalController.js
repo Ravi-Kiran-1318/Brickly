@@ -5,109 +5,10 @@ const Application = require('../models/Application');
 const Notification = require('../models/Notification');
 const { sendMail } = require('../utils/mailer');
 const { getIO } = require('../socket');
+const { ROLE_HIERARCHY, getTradeForRole } = require('../utils/roleHierarchy');
+const HiredWorker = require('../models/HiredWorker');
 
-const ROLE_HIERARCHY = {
-  'Plumber': [
-    'Plumbing Helper',
-    'Junior Plumber',
-    'Plumber',
-    'Senior Plumber',
-    'Plumbing Supervisor',
-    'Plumbing Foreman'
-  ],
-  'Electrician': [
-    'Electrical Helper',
-    'Junior Electrician',
-    'Electrician',
-    'Senior Electrician',
-    'Electrical Supervisor',
-    'Electrical Foreman'
-  ],
-  'Mason': [
-    'Mason Helper',
-    'Junior Mason',
-    'Mason',
-    'Senior Mason',
-    'Masonry Supervisor',
-    'Masonry Foreman'
-  ],
-  'Carpenter': [
-    'Carpentry Helper',
-    'Junior Carpenter',
-    'Carpenter',
-    'Senior Carpenter',
-    'Carpentry Supervisor',
-    'Carpentry Foreman'
-  ],
-  'Welder': [
-    'Welding Helper',
-    'Junior Welder',
-    'Welder',
-    'Senior Welder',
-    'Welding Supervisor',
-    'Welding Foreman'
-  ],
-  'Painter': [
-    'Painting Helper',
-    'Junior Painter',
-    'Painter',
-    'Senior Painter',
-    'Painting Supervisor',
-    'Painting Foreman'
-  ],
-  'Tiler': [
-    'Tiling Helper',
-    'Junior Tiler',
-    'Tiler',
-    'Senior Tiler',
-    'Tiling Supervisor',
-    'Tiling Foreman'
-  ],
-  'Roofer': [
-    'Roofing Helper',
-    'Junior Roofer',
-    'Roofer',
-    'Senior Roofer',
-    'Roofing Supervisor',
-    'Roofing Foreman'
-  ],
-  'AC Technician': [
-    'AC Helper',
-    'Junior AC Technician',
-    'AC Technician',
-    'Senior AC Technician',
-    'HVAC Supervisor',
-    'HVAC Foreman'
-  ],
-  'Civil Engineer': [
-    'Junior Civil Engineer',
-    'Civil Engineer',
-    'Senior Civil Engineer',
-    'Civil Engineering Lead',
-    'Civil Engineering Manager'
-  ],
-  'Architect': [
-    'Junior Architect',
-    'Architect',
-    'Senior Architect',
-    'Principal Architect',
-    'Lead Architect'
-  ],
-  'Interior Designer': [
-    'Junior Interior Designer',
-    'Interior Designer',
-    'Senior Interior Designer',
-    'Lead Interior Designer',
-    'Principal Interior Designer'
-  ],
-  'Foreman': [
-    'Assistant Foreman',
-    'Foreman',
-    'Senior Foreman',
-    'General Foreman',
-    'Site Supervisor'
-  ]
-};
+
 
 // --- Profile ---
 exports.getProfile = async (req, res) => {
@@ -162,19 +63,45 @@ exports.getStats = async (req, res) => {
 exports.getJobs = async (req, res) => {
   try {
     const user = await User.findById(req.user.id);
-    const { minSalary, maxSalary, duration, location } = req.query;
+    const { minSalary, maxSalary, duration, location, maxDistance, professionalLat, professionalLng } = req.query;
+
+    const tradeGroup = getTradeForRole(user.jobRole) || user.jobRole;
+    const validRoles = ROLE_HIERARCHY[tradeGroup] || [user.jobRole];
 
     const query = { 
       isFilled: false,
-      jobRole: { $regex: user.jobRole, $options: 'i' }
+      jobRole: { $in: validRoles }
     };
+
+    if (maxDistance && maxDistance !== 'Any Distance' && professionalLat && professionalLng) {
+      // maxDistance comes in as "Within 10 km", "Within 25 km", etc. We need to extract the number.
+      let distanceInKm = 0;
+      if (maxDistance === 'Within 10 km') distanceInKm = 10;
+      else if (maxDistance === 'Within 25 km') distanceInKm = 25;
+      else if (maxDistance === 'Within 50 km') distanceInKm = 50;
+      else distanceInKm = parseFloat(maxDistance);
+
+      if (distanceInKm > 0) {
+        query.workSiteLocation = {
+          $near: {
+            $geometry: {
+              type: 'Point',
+              coordinates: [parseFloat(professionalLng), parseFloat(professionalLat)]
+            },
+            $maxDistance: distanceInKm * 1000 // convert km to metres
+          }
+        };
+      }
+    }
 
     if (minSalary) query.salary = { ...query.salary, $gte: minSalary };
     if (maxSalary) query.salary = { ...query.salary, $lte: maxSalary };
     if (duration) query.duration = duration;
     if (location) query.workLocation = { $regex: location, $options: 'i' };
 
-    const jobs = await JobPost.find(query).sort({ createdAt: -1 });
+    const jobs = await JobPost.find(query)
+      .populate('contractorId', 'name companyName phone email')
+      .sort({ createdAt: -1 });
 
     // Check if professional has already applied to these jobs
     const applications = await Application.find({ professionalId: req.user.id });
@@ -502,6 +429,120 @@ exports.hireDirectly = async (req, res) => {
 
     res.json({ message: 'Hire request sent to professional' });
   } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// --- Join Job (Professional accepts a Hired status) ---
+exports.joinJob = async (req, res) => {
+  try {
+    const applicationId = req.params.id;
+    const professionalId = req.user.id;
+
+    // 1. Fetch the application being joined
+    const application = await Application.findOne({ _id: applicationId, professionalId });
+    if (!application) return res.status(404).json({ message: 'Application not found' });
+    if (application.status !== 'Hired') return res.status(400).json({ message: 'You can only join a job you have been hired for' });
+
+    // 2. Fetch the job post
+    const jobPost = await JobPost.findById(application.jobPostId);
+    if (!jobPost) return res.status(404).json({ message: 'Job post not found' });
+
+    const io = getIO();
+
+    // 3. Update this application to 'Joined'
+    application.status = 'Joined';
+    await application.save();
+
+    // 4. Auto-withdraw all other pending/applied/shortlisted applications by this professional
+    const otherApps = await Application.find({
+      professionalId,
+      _id: { $ne: applicationId },
+      status: { $in: ['Applied', 'Viewed', 'Shortlisted'] }
+    });
+    for (const otherApp of otherApps) {
+      otherApp.status = 'Withdrawn';
+      await otherApp.save();
+    }
+
+    // 5. Mark the job post as Filled
+    jobPost.isFilled = true;
+    jobPost.filledAt = new Date();
+    await jobPost.save();
+
+    // 6. Create HiredWorker record
+    const hiredWorker = new HiredWorker({
+      contractorId: application.contractorId,
+      professionalId,
+      jobPostId: jobPost._id,
+      applicationId: application._id,
+      jobRole: jobPost.jobRole,
+      salary: jobPost.salary,
+      salaryType: jobPost.salaryType,
+      workLocation: jobPost.workLocation
+    });
+    await hiredWorker.save();
+
+    // 7. Notify the contractor that the professional has joined
+    const professional = await User.findById(professionalId);
+    const contractorNotification = new Notification({
+      userId: application.contractorId,
+      type: 'Hire',
+      title: 'Professional Has Joined!',
+      message: `${professional.name} has accepted the position and joined as ${jobPost.jobRole}!`,
+      relatedId: jobPost._id,
+      actionTab: 'My Job Posts'
+    });
+    await contractorNotification.save();
+
+    if (io) {
+      io.to(`user:${application.contractorId}`).emit('notification', {
+        notification: contractorNotification
+      });
+    }
+
+    // 8. Notify all other applicants for this job that the position is filled
+    const otherJobApps = await Application.find({
+      jobPostId: jobPost._id,
+      professionalId: { $ne: professionalId },
+      status: { $in: ['Applied', 'Viewed', 'Shortlisted', 'Hired'] }
+    });
+    for (const otherApp of otherJobApps) {
+      otherApp.status = 'Position Filled';
+      await otherApp.save();
+
+      const filledNotification = new Notification({
+        userId: otherApp.professionalId,
+        type: 'General',
+        title: 'Position Filled',
+        message: `The position for ${jobPost.jobRole} has been filled. Thank you for your interest.`,
+        relatedId: jobPost._id,
+        actionTab: 'Applications'
+      });
+      await filledNotification.save();
+
+      if (io) {
+        io.to(`user:${otherApp.professionalId}`).emit('notification', {
+          notification: filledNotification
+        });
+      }
+    }
+
+    // 9. Update applicant status in the JobPost embedded array too
+    if (jobPost.applicants) {
+      for (const applicant of jobPost.applicants) {
+        if (applicant.professionalId.toString() === professionalId) {
+          applicant.status = 'Hired';
+        } else {
+          applicant.status = 'Rejected';
+        }
+      }
+      await jobPost.save();
+    }
+
+    res.json({ message: 'Successfully joined! Welcome aboard.', hiredWorker });
+  } catch (error) {
+    console.error('Join job error:', error);
     res.status(500).json({ message: error.message });
   }
 };

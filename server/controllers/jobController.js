@@ -3,44 +3,75 @@ const JobPost = require('../models/JobPost');
 const AvailabilityPost = require('../models/AvailabilityPost');
 const Notification = require('../models/Notification');
 const { getIO } = require('../socket');
-// const { sendEmail } = require('../utils/mailer'); // Assuming mailer exists
+const { ROLE_HIERARCHY, getTradeForRole } = require('../utils/roleHierarchy');
+const { geocodeAddress } = require('../utils/geocoder');
 
 exports.createJob = async (req, res) => {
   try {
+    let workSiteLocation = null;
+    if (req.body.workLocation) {
+      workSiteLocation = await geocodeAddress(req.body.workLocation);
+    }
+
     const job = new JobPost({
       ...req.body,
-      contractorId: req.user.id
+      contractorId: req.user.id,
+      workSiteLocation
     });
     await job.save();
 
-    // Find matching professionals (role: 'professional', and jobRole matches job.jobRole)
-    const matchingProfessionals = await User.find({
-      role: 'professional',
-      jobRole: { $regex: new RegExp(`^${job.jobRole}$`, 'i') }
-    });
+    // Determine trade group for the posted job role
+    const tradeGroup = getTradeForRole(job.jobRole);
+
+    let matchingProfessionals = [];
+    
+    if (tradeGroup) {
+      // Find all valid roles for this trade
+      const validRoles = ROLE_HIERARCHY[tradeGroup];
+      
+      // Find professionals whose jobRole is in validRoles AND who have jobAlerts enabled
+      matchingProfessionals = await User.find({
+        role: 'professional',
+        jobRole: { $in: validRoles },
+        jobAlerts: { $ne: false } // match true or where it doesn't exist
+      });
+    }
 
     const io = getIO();
     const contractor = await User.findById(req.user.id);
+
+    const jobSummary = {
+      jobId: job._id,
+      jobRole: job.jobRole,
+      salary: job.salary || 'Not specified',
+      workLocation: job.workLocation,
+      contractorName: contractor.companyName || contractor.name,
+      postedAt: new Date()
+    };
 
     for (const prof of matchingProfessionals) {
       // 1. Save Notification
       const notification = new Notification({
         userId: prof._id,
-        type: 'General',
-        title: 'New Job Matching Your Role!',
-        message: `${contractor.companyName || contractor.name} posted a new job vacancy for "${job.jobRole}" in ${job.workLocation}.`,
+        type: 'Job',
+        title: 'New Job Available',
+        message: `${contractor.companyName || contractor.name} has posted a new job for your trade. Role: ${job.jobRole}, Salary: ${jobSummary.salary}, Location: ${job.workLocation}.`,
         relatedId: job._id,
-        actionTab: 'Job Feed'
+        actionTab: 'job-feed'
       });
       await notification.save();
 
       // 2. Emit Socket event
       if (io) {
-        io.to(`user:${prof._id}`).emit('professional:newJob', {
-          job,
+        io.to(`user:${prof._id}`).emit('notification', {
           notification
         });
       }
+
+      // 3. Push to pendingJobAlertEmails array
+      await User.findByIdAndUpdate(prof._id, {
+        $push: { pendingJobAlertEmails: jobSummary }
+      });
     }
 
     res.status(201).json(job);
@@ -57,9 +88,14 @@ exports.getMyJobs = async (req, res) => {
 };
 
 exports.updateJob = async (req, res) => {
+  const updates = { ...req.body };
+  if (updates.workLocation) {
+    updates.workSiteLocation = await geocodeAddress(updates.workLocation);
+  }
+
   const job = await JobPost.findOneAndUpdate(
     { _id: req.params.id, contractorId: req.user.id },
-    { $set: req.body },
+    { $set: updates },
     { returnDocument: 'after' }
   );
   if (!job) return res.status(404).json({ message: 'Job not found' });

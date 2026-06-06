@@ -51,6 +51,9 @@ const userSchema = new mongoose.Schema({
 
   // Tracking
   hiredBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  isAvailable: { type: Boolean, default: false },
+  jobAlerts: { type: Boolean, default: true },
+  pendingJobAlertEmails: [{ type: Object }],
   isVerified: { type: Boolean, default: false },
   phoneVerified: { type: Boolean, default: false },
   phoneOtp: { type: String },

@@ -3,8 +3,9 @@ import api from '../../api';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   IconBell, IconTrash, IconCircleCheck, IconBriefcase, 
-  IconClipboardText, IconInfoCircle, IconUserCircle
-, IconX, IconAlertTriangle} from '@tabler/icons-react';
+  IconClipboardText, IconInfoCircle, IconUserCircle,
+  IconX, IconAlertTriangle, IconCheck
+} from '@tabler/icons-react';
 
 const NotificationsTab = ({ setUnreadCount, setActiveTab }) => {
   const [notifications, setNotifications] = useState([]);

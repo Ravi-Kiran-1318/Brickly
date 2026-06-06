@@ -5,6 +5,7 @@ const Notification = require('../models/Notification');
 const InterestRequest = require('../models/InterestRequest');
 const Review = require('../models/Review');
 const Contract = require('../models/Contract');
+const HiredWorker = require('../models/HiredWorker');
 
 exports.getProfile = async (req, res) => {
   const user = await User.findById(req.user.id).select('-password');
@@ -34,7 +35,7 @@ exports.getStats = async (req, res) => {
     QuoteRequest.countDocuments({ contractorId: req.user.id, status: 'Sent' }),
     Notification.countDocuments({ userId: req.user.id, isRead: false }),
     Contract.countDocuments({ contractorId: req.user.id, status: 'Active' }),
-    User.countDocuments({ hiredBy: req.user.id })
+    HiredWorker.countDocuments({ contractorId: req.user.id, status: 'Active' })
   ]);
 
   res.json({
@@ -47,8 +48,15 @@ exports.getStats = async (req, res) => {
 };
 
 exports.getTeam = async (req, res) => {
-  const team = await User.find({ hiredBy: req.user.id }).select('name phone email jobRole yearsOfExperience specialization');
-  res.json(team);
+  try {
+    const team = await HiredWorker.find({ contractorId: req.user.id })
+      .populate('professionalId', 'name phone email jobRole yearsOfExperience locationPreference about')
+      .populate('jobPostId', 'jobRole workLocation salary salaryType')
+      .sort({ joinedAt: -1 });
+    res.json(team);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
 };
 
 // --- Notifications ---

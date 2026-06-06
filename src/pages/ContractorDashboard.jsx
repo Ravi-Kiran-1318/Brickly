@@ -52,43 +52,49 @@ const ContractorDashboard = () => {
       socket.connect();
       socket.emit('join', user._id);
 
-      socket.on('contractor:newInterestRequest', (data) => {
+      const handleNewInterest = (data) => {
         setUnreadCount(prev => prev + 1);
         toast.success("New Interest Request received!", { icon: "👋" });
-      });
+      };
+      socket.on('contractor:newInterestRequest', handleNewInterest);
 
-      socket.on('contractor:newQuoteResponse', (data) => {
+      const handleQuoteResponse = (data) => {
         setUnreadCount(prev => prev + 1);
         toast.success("New Quote Response received!", { icon: "📄" });
-      });
+      };
+      socket.on('contractor:newQuoteResponse', handleQuoteResponse);
 
-      socket.on('contractor:orderStatusUpdate', (data) => {
+      const handleOrderStatus = (data) => {
         setUnreadCount(prev => prev + 1);
         toast.success("Order status updated!", { icon: "📦" });
-      });
+      };
+      socket.on('contractor:orderStatusUpdate', handleOrderStatus);
 
-      socket.on('contractor:newAvailability', (data) => {
+      const handleNewAvailability = (data) => {
         setUnreadCount(prev => prev + 1);
         toast.success(data.notification?.title || "New Professional Available!", { icon: "👷" });
-      });
+      };
+      socket.on('contractor:newAvailability', handleNewAvailability);
 
-      socket.on('contractor:reviewReplyReceived', (data) => {
+      const handleReviewReply = (data) => {
         setUnreadCount(prev => prev + 1);
         toast.success("Dealer replied to your review!", { icon: "💬" });
-      });
+      };
+      socket.on('contractor:reviewReplyReceived', handleReviewReply);
 
-      socket.on('contractor:reviewReminder', (data) => {
+      const handleReviewReminder = (data) => {
         setUnreadCount(prev => prev + 1);
         toast.success("Order Delivered! Don't forget to leave a review.", { icon: "⭐" });
-      });
+      };
+      socket.on('contractor:reviewReminder', handleReviewReminder);
 
       return () => {
-        socket.off('contractor:newInterestRequest');
-        socket.off('contractor:newQuoteResponse');
-        socket.off('contractor:orderStatusUpdate');
-        socket.off('contractor:newAvailability');
-        socket.off('contractor:reviewReplyReceived');
-        socket.off('contractor:reviewReminder');
+        socket.off('contractor:newInterestRequest', handleNewInterest);
+        socket.off('contractor:newQuoteResponse', handleQuoteResponse);
+        socket.off('contractor:orderStatusUpdate', handleOrderStatus);
+        socket.off('contractor:newAvailability', handleNewAvailability);
+        socket.off('contractor:reviewReplyReceived', handleReviewReply);
+        socket.off('contractor:reviewReminder', handleReviewReminder);
         socket.disconnect();
       };
     }

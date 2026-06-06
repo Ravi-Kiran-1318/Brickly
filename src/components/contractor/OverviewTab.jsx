@@ -3,8 +3,10 @@ import api from '../../api';
 import { motion } from 'framer-motion';
 import { 
   IconBriefcase, IconUsers, IconFileInvoice, IconBell,
-  IconCheck, IconChevronRight, IconTrendingUp, IconCircleCheck, IconHammer
+  IconCheck, IconChevronRight, IconTrendingUp, IconCircleCheck, IconHammer,
+  IconStar
 } from '@tabler/icons-react';
+import LeaveReviewModal from './LeaveReviewModal';
 
 const StatCard = ({ icon: Icon, label, value, color }) => (
   <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 rounded-3xl shadow-sm hover:shadow-md transition-shadow">
@@ -26,6 +28,7 @@ const OverviewTab = ({ setActiveTab }) => {
   const [team, setTeam] = useState([]);
   const [hasPortfolio, setHasPortfolio] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [reviewProfessional, setReviewProfessional] = useState(null);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -151,18 +154,30 @@ const OverviewTab = ({ setActiveTab }) => {
          </div>
          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {team.length > 0 ? team.map((member, i) => (
-              <div key={i} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 rounded-[32px] flex items-center gap-4 hover:border-accent transition-all shadow-sm">
-                 <div className="w-14 h-14 rounded-2xl bg-slate-50 dark:bg-slate-800 flex items-center justify-center font-black text-xl text-primary dark:text-white border border-slate-100 dark:border-slate-700 uppercase">
-                    {member.name.charAt(0)}
+              <div key={member._id || i} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 rounded-[32px] flex items-center gap-4 hover:border-accent transition-all shadow-sm group">
+                 <div className="w-14 h-14 rounded-2xl bg-slate-50 dark:bg-slate-800 flex items-center justify-center font-black text-xl text-primary dark:text-white border border-slate-100 dark:border-slate-700 uppercase group-hover:scale-110 transition-transform">
+                    {member.professionalId?.name?.charAt(0) || 'P'}
                  </div>
-                 <div>
-                    <h4 className="font-black text-primary dark:text-white">{member.name}</h4>
-                    <p className="text-[10px] font-black text-accent uppercase tracking-widest">{member.jobRole || 'Professional'}</p>
-                    <div className="flex items-center gap-2 mt-1">
-                       <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                       <span className="text-[10px] font-bold text-slate-400">WORKING</span>
+                 <div className="flex-1 min-w-0">
+                    <h4 className="font-black text-primary dark:text-white truncate">{member.professionalId?.name || 'Professional'}</h4>
+                    <p className="text-[10px] font-black text-accent uppercase tracking-widest">{member.jobRole || member.professionalId?.jobRole || 'Professional'}</p>
+                    <div className="flex items-center gap-3 mt-1">
+                       <div className="flex items-center gap-1">
+                          <span className={`w-2 h-2 rounded-full ${member.status === 'Active' ? 'bg-green-500 animate-pulse' : 'bg-slate-400'}`} />
+                          <span className="text-[10px] font-bold text-slate-400 uppercase">{member.status}</span>
+                       </div>
+                       {member.workLocation && (
+                         <span className="text-[10px] font-bold text-slate-400 truncate">• {member.workLocation}</span>
+                       )}
                     </div>
                  </div>
+                 <button
+                    onClick={() => setReviewProfessional(member.professionalId)}
+                    className="w-10 h-10 rounded-xl bg-orange-50 dark:bg-orange-900/20 text-orange-500 flex items-center justify-center hover:bg-orange-100 hover:scale-110 transition-all shrink-0"
+                    title="Leave a Review"
+                 >
+                    <IconStar size={20} />
+                 </button>
               </div>
             )) : (
               <div className="col-span-full py-12 text-center bg-slate-50 dark:bg-slate-900/40 rounded-[32px] border-2 border-dashed border-slate-200 dark:border-slate-800">
@@ -172,6 +187,12 @@ const OverviewTab = ({ setActiveTab }) => {
             )}
          </div>
       </div>
+
+      <LeaveReviewModal 
+        isOpen={!!reviewProfessional}
+        onClose={() => setReviewProfessional(null)}
+        professional={reviewProfessional}
+      />
     </div>
   );
 };

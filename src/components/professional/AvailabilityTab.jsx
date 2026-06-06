@@ -188,8 +188,12 @@ const AvailabilityTab = () => {
     }
   };
 
+  const [submitLoading, setSubmitLoading] = useState(false);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (submitLoading) return;
+    setSubmitLoading(true);
     const data = new FormData();
     Object.keys(formData).forEach(key => {
       if (key === 'skillTags') {
@@ -208,11 +212,13 @@ const AvailabilityTab = () => {
       } else {
         await api.post('/api/professional/availability', data);
       }
-      fetchAvailability();
+      fetchProfileAndAvailability();
       setIsFormOpen(false);
       setIsAvailable(true);
     } catch (err) {
       console.error(err);
+    } finally {
+      setSubmitLoading(false);
     }
   };
 
@@ -433,8 +439,9 @@ const AvailabilityTab = () => {
 
                          <div className="flex justify-end gap-4 pt-6">
                             <button type="button" onClick={() => setIsFormOpen(false)} className="px-8 py-4 text-slate-500 font-bold hover:bg-slate-100 rounded-2xl transition-all">Cancel</button>
-                            <button type="submit" className="px-12 py-4 bg-accent text-white font-black rounded-2xl hover:shadow-lg transition-all flex items-center gap-2">
-                               <IconCircleCheck size={20} /> {post ? 'Update Post' : 'Post Availability'}
+                            <button type="submit" disabled={submitLoading} className="px-12 py-4 bg-accent text-white font-black rounded-2xl hover:shadow-lg transition-all flex items-center gap-2 disabled:opacity-50">
+                               {submitLoading ? <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span> : <IconCircleCheck size={20} />} 
+                               {submitLoading ? 'Posting...' : (post ? 'Update Post' : 'Post Availability')}
                             </button>
                          </div>
                       </form>

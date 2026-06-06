@@ -6,7 +6,7 @@ const applicationSchema = new mongoose.Schema({
   contractorId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   status: { 
     type: String, 
-    enum: ['Applied', 'Viewed', 'Shortlisted', 'Hired', 'Rejected'], 
+    enum: ['Applied', 'Viewed', 'Shortlisted', 'Hired', 'Rejected', 'Joined', 'Withdrawn', 'Position Filled'], 
     default: 'Applied' 
   },
   appliedAt: { type: Date, default: Date.now }

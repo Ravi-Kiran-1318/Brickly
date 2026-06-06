@@ -46,6 +46,8 @@ router.get('/deals', procurementController.getActiveDeals);
 
 // Review Routes
 router.get('/reviews', contractorController.getMyReviews);
+router.post('/professionals/:id/review', require('../controllers/professionalReviewController').createReview);
+router.get('/professionals/:id/reviews', require('../controllers/professionalReviewController').getReviewsForProfessional);
 
 // Notification Routes
 router.get('/notifications', contractorController.getNotifications);

@@ -16,6 +16,9 @@ import JobsFeedTab from '../components/professional/JobsFeedTab';
 import AvailabilityTab from '../components/professional/AvailabilityTab';
 import ApplicationsTab from '../components/professional/ApplicationsTab';
 import NotificationsTab from '../components/professional/NotificationsTab';
+import SettingsTab from '../components/professional/SettingsTab';
+import ReviewsTab from '../components/professional/ReviewsTab';
+import { IconStar } from '@tabler/icons-react';
 
 const ProfessionalDashboard = () => {
   const { user, logout } = useAuth();
@@ -23,6 +26,7 @@ const ProfessionalDashboard = () => {
   const [activeTab, setActiveTab] = useState('Job Feed');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [openMapJobId, setOpenMapJobId] = useState(null);
   const { isDark, toggleTheme } = useTheme();
 
   useEffect(() => {
@@ -70,18 +74,21 @@ const ProfessionalDashboard = () => {
       };
     }
   }, [user]);
-
   const navItems = [
     { label: 'Job Feed', icon: IconBriefcase },
     { label: 'My Availability', icon: IconCalendarEvent },
     { label: 'Applications', icon: IconClipboardText },
+    { label: 'My Reviews', icon: IconStar },
+    { label: 'Settings', icon: IconUserCircle },
   ];
 
   const renderActiveTab = () => {
     switch (activeTab) {
-      case 'Job Feed': return <JobsFeedTab />;
+      case 'Job Feed': return <JobsFeedTab openMapJobId={openMapJobId} setOpenMapJobId={setOpenMapJobId} />;
       case 'My Availability': return <AvailabilityTab />;
-      case 'Applications': return <ApplicationsTab />;
+      case 'Applications': return <ApplicationsTab openMapJobId={openMapJobId} setOpenMapJobId={setOpenMapJobId} />;
+      case 'My Reviews': return <ReviewsTab />;
+      case 'Settings': return <SettingsTab />;
       case 'Notifications': return <NotificationsTab setUnreadCount={setUnreadCount} setActiveTab={setActiveTab} />;
       default: return <JobsFeedTab />;
     }
