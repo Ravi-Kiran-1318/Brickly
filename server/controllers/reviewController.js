@@ -38,8 +38,9 @@ exports.submitReview = async (req, res) => {
     if (order.contractorId._id.toString() !== req.user.id) return res.status(403).json({ message: 'Not authorized for this order' });
     if (order.status !== 'Delivered') return res.status(400).json({ message: 'Order must be delivered to leave a review' });
     if (order.isReviewed) return res.status(400).json({ message: 'You have already reviewed this order' });
-    
-    if (new Date() > new Date(order.reviewDeadline)) {
+    const deadline = order.reviewDeadline ? new Date(order.reviewDeadline) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+
+    if (new Date() > deadline) {
       return res.status(400).json({ message: 'Review window has closed for this order' });
     }
 
@@ -54,7 +55,7 @@ exports.submitReview = async (req, res) => {
       communicationRating,
       overallRating,
       reviewText,
-      reviewDeadline: order.reviewDeadline
+      reviewDeadline: deadline
     });
 
     await review.save();
@@ -74,7 +75,9 @@ exports.submitReview = async (req, res) => {
       actionTab: 'Reviews'
     });
     await notification.save();
-    io.to(`user:${order.dealerId._id}`).emit('dealer:newReview', notification);
+    if (io) {
+      io.to(`user:${order.dealerId._id}`).emit('dealer:newReview', notification);
+    }
 
     res.status(201).json(review);
   } catch (error) {

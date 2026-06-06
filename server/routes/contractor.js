@@ -51,6 +51,7 @@ router.get('/reviews', contractorController.getMyReviews);
 router.get('/notifications', contractorController.getNotifications);
 router.put('/notifications/read-all', contractorController.readAllNotifications);
 router.put('/notifications/:id/read', contractorController.readNotification);
+router.delete('/notifications/delete-all', contractorController.deleteAllNotifications);
 router.delete('/notifications/:id', contractorController.deleteNotification);
 
 // Interest Request Routes

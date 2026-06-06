@@ -15,12 +15,14 @@ const ReviewsTab = () => {
   const [filter, setFilter] = useState('All');
 
   useEffect(() => {
-    fetchReviews();
-  }, [user._id]);
+    if (user) fetchReviews();
+  }, [user]);
 
   const fetchReviews = async () => {
     try {
-      const res = await api.get(`/api/reviews/dealer/${user._id}`);
+      const dealerId = user?._id || user?.id;
+      if (!dealerId) return;
+      const res = await api.get(`/api/reviews/dealer/${dealerId}`);
       setReviews(res.data);
     } catch (err) {
       console.error(err);

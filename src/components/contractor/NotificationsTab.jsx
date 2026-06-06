@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import api from '../../api';
 import toast from 'react-hot-toast';
-import { IconBell, IconCheck, IconTrash, IconCircle } from '@tabler/icons-react';
+import { IconBell, IconCheck, IconTrash, IconCircle, IconX, IconAlertTriangle } from '@tabler/icons-react';
 
 const NotificationsTab = ({ setUnreadCount, setActiveTab }) => {
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
 
   useEffect(() => {
     fetchNotifications();
@@ -19,6 +20,16 @@ const NotificationsTab = ({ setUnreadCount, setActiveTab }) => {
     } catch (err) { toast.error("Failed to load notifications"); }
     finally { setLoading(false); }
   };
+
+  const handleDeleteAll = async () => {
+    try {
+      await api.delete('/api/contractor/notifications/delete-all');
+      setNotifications([]);
+      setUnreadCount(0);
+      setShowClearConfirm(false);
+    } catch (err) { console.error(err); }
+  };
+  
 
   const handleReadAll = async () => {
     try {
@@ -59,11 +70,18 @@ const NotificationsTab = ({ setUnreadCount, setActiveTab }) => {
     <div className="space-y-8 max-w-3xl mx-auto">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-black text-primary dark:text-white uppercase tracking-tight">Notification Center</h2>
-        {notifications.some(n => !n.isRead) && (
-          <button onClick={handleReadAll} className="text-sm font-bold text-accent hover:underline flex items-center gap-1.5 transition-all">
-             <IconCheck size={18}/> Mark all as read
-          </button>
-        )}
+        <div className="flex gap-4">
+          {notifications.some(n => !n.isRead) && (
+            <button onClick={handleReadAll} className="text-sm font-bold text-accent hover:underline flex items-center gap-1.5 transition-all">
+               <IconCheck size={18}/> Mark all as read
+            </button>
+          )}
+          {notifications.length > 0 && (
+            <button onClick={() => setShowClearConfirm(true)} className="text-sm font-bold text-red-500 hover:underline flex items-center gap-1.5 transition-all">
+               <IconTrash size={18}/> Clear all
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="space-y-3">
@@ -99,7 +117,25 @@ const NotificationsTab = ({ setUnreadCount, setActiveTab }) => {
           </div>
         )}
       </div>
+    
+      {showClearConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowClearConfirm(false)} />
+          <div className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-[32px] p-8 relative z-10 text-center shadow-2xl">
+            <div className="w-16 h-16 bg-red-50 dark:bg-red-900/20 text-red-500 rounded-full flex items-center justify-center mx-auto mb-6">
+               <IconAlertTriangle size={32} />
+            </div>
+            <h3 className="text-xl font-black text-primary dark:text-white mb-2">Delete all notifications?</h3>
+            <p className="text-slate-500 text-sm mb-8">This action cannot be undone. Are you sure you want to permanently delete all notifications?</p>
+            <div className="flex gap-4">
+               <button onClick={() => setShowClearConfirm(false)} className="flex-1 py-3 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-xl font-bold uppercase tracking-widest text-xs hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">Cancel</button>
+               <button onClick={handleDeleteAll} className="flex-1 py-3 bg-red-500 text-white rounded-xl font-bold uppercase tracking-widest text-xs hover:bg-red-600 transition-colors">Delete All</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
+  
   );
 };
 

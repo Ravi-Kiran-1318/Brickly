@@ -45,6 +45,7 @@ router.get('/applications', professionalController.getMyApplications);
 router.get('/notifications', professionalController.getNotifications);
 router.put('/notifications/read-all', professionalController.readAllNotifications);
 router.put('/notifications/:id/read', professionalController.readNotification);
+router.delete('/notifications/delete-all', professionalController.deleteAllNotifications);
 router.delete('/notifications/:id', professionalController.deleteNotification);
 
 module.exports = router;

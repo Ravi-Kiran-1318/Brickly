@@ -8,12 +8,119 @@ import {
 } from '@tabler/icons-react';
 import { useAuth } from '../../context/AuthContext';
 
+const ROLE_HIERARCHY = {
+  'Plumber': [
+    'Plumbing Helper',
+    'Junior Plumber',
+    'Plumber',
+    'Senior Plumber',
+    'Plumbing Supervisor',
+    'Plumbing Foreman'
+  ],
+  'Electrician': [
+    'Electrical Helper',
+    'Junior Electrician',
+    'Electrician',
+    'Senior Electrician',
+    'Electrical Supervisor',
+    'Electrical Foreman'
+  ],
+  'Mason': [
+    'Mason Helper',
+    'Junior Mason',
+    'Mason',
+    'Senior Mason',
+    'Masonry Supervisor',
+    'Masonry Foreman'
+  ],
+  'Carpenter': [
+    'Carpentry Helper',
+    'Junior Carpenter',
+    'Carpenter',
+    'Senior Carpenter',
+    'Carpentry Supervisor',
+    'Carpentry Foreman'
+  ],
+  'Welder': [
+    'Welding Helper',
+    'Junior Welder',
+    'Welder',
+    'Senior Welder',
+    'Welding Supervisor',
+    'Welding Foreman'
+  ],
+  'Painter': [
+    'Painting Helper',
+    'Junior Painter',
+    'Painter',
+    'Senior Painter',
+    'Painting Supervisor',
+    'Painting Foreman'
+  ],
+  'Tiler': [
+    'Tiling Helper',
+    'Junior Tiler',
+    'Tiler',
+    'Senior Tiler',
+    'Tiling Supervisor',
+    'Tiling Foreman'
+  ],
+  'Roofer': [
+    'Roofing Helper',
+    'Junior Roofer',
+    'Roofer',
+    'Senior Roofer',
+    'Roofing Supervisor',
+    'Roofing Foreman'
+  ],
+  'AC Technician': [
+    'AC Helper',
+    'Junior AC Technician',
+    'AC Technician',
+    'Senior AC Technician',
+    'HVAC Supervisor',
+    'HVAC Foreman'
+  ],
+  'Civil Engineer': [
+    'Junior Civil Engineer',
+    'Civil Engineer',
+    'Senior Civil Engineer',
+    'Civil Engineering Lead',
+    'Civil Engineering Manager'
+  ],
+  'Architect': [
+    'Junior Architect',
+    'Architect',
+    'Senior Architect',
+    'Principal Architect',
+    'Lead Architect'
+  ],
+  'Interior Designer': [
+    'Junior Interior Designer',
+    'Interior Designer',
+    'Senior Interior Designer',
+    'Lead Interior Designer',
+    'Principal Interior Designer'
+  ],
+  'Foreman': [
+    'Assistant Foreman',
+    'Foreman',
+    'Senior Foreman',
+    'General Foreman',
+    'Site Supervisor'
+  ]
+};
+
 const AvailabilityTab = () => {
   const { user } = useAuth();
+  const [profile, setProfile] = useState(user);
   const [post, setPost] = useState(null);
   const [loading, setLoading] = useState(true);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isAvailable, setIsAvailable] = useState(user?.isAvailable || false);
+  
+  const userTrade = profile?.jobRole || profile?.trade || '';
+  const roleOptions = ROLE_HIERARCHY[userTrade] || [];
   
   const [formData, setFormData] = useState({
     jobRole: user?.jobRole || '',
@@ -29,11 +136,20 @@ const AvailabilityTab = () => {
   const [skillInput, setSkillInput] = useState('');
 
   useEffect(() => {
-    fetchAvailability();
-  }, []);
+    fetchProfileAndAvailability();
+  }, [user]);
 
-  const fetchAvailability = async () => {
+  const fetchProfileAndAvailability = async () => {
     try {
+      setLoading(true);
+      const userId = user?.id || user?._id;
+      let freshProfile = user;
+      if (userId) {
+        const res = await api.get(`/api/auth/profile/${userId}`);
+        freshProfile = res.data;
+        setProfile(freshProfile);
+      }
+      
       const res = await api.get('/api/professional/availability');
       if (res.data) {
         setPost(res.data);
@@ -44,6 +160,15 @@ const AvailabilityTab = () => {
           availableFrom: new Date(res.data.availableFrom).toISOString().split('T')[0],
           locationPreference: res.data.locationPreference,
           skillTags: res.data.skillTags || []
+        });
+      } else {
+        setFormData({
+          jobRole: freshProfile?.jobRole || '',
+          yearsOfExperience: freshProfile?.yearsOfExperience || '',
+          expectedSalary: '',
+          availableFrom: '',
+          locationPreference: freshProfile?.locationPreference || '',
+          skillTags: []
         });
       }
     } catch (err) {
@@ -217,11 +342,24 @@ const AvailabilityTab = () => {
                          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div>
                                <label className="block text-xs font-black uppercase text-slate-400 mb-2">Job Role</label>
-                               <input 
-                                 type="text" required placeholder="e.g. Master Mason"
-                                 className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-2xl p-4 focus:ring-2 focus:ring-accent transition-all dark:text-white font-bold"
-                                 value={formData.jobRole} onChange={(e) => setFormData({...formData, jobRole: e.target.value})}
-                               />
+                               {roleOptions.length > 0 ? (
+                                 <select
+                                   required
+                                   className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-2xl p-4 focus:ring-2 focus:ring-accent transition-all dark:text-white font-bold"
+                                   value={formData.jobRole} onChange={(e) => setFormData({...formData, jobRole: e.target.value})}
+                                 >
+                                   <option value="" disabled>Select a role...</option>
+                                   {roleOptions.map((role) => (
+                                     <option key={role} value={role}>{role}</option>
+                                   ))}
+                                 </select>
+                               ) : (
+                                 <input 
+                                   type="text" required placeholder="e.g. Master Mason"
+                                   className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-2xl p-4 focus:ring-2 focus:ring-accent transition-all dark:text-white font-bold"
+                                   value={formData.jobRole} onChange={(e) => setFormData({...formData, jobRole: e.target.value})}
+                                 />
+                               )}
                             </div>
                             <div>
                                <label className="block text-xs font-black uppercase text-slate-400 mb-2">Years of Experience</label>

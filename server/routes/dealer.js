@@ -47,6 +47,7 @@ router.put('/deals/:id/view', dealerController.incrementDealView);
 router.get('/notifications', dealerController.getNotifications);
 router.put('/notifications/read-all', dealerController.readAllNotifications);
 router.put('/notifications/:id/read', dealerController.readNotification);
+router.delete('/notifications/delete-all', dealerController.deleteAllNotifications);
 router.delete('/notifications/:id', dealerController.deleteNotification);
 
 module.exports = router;

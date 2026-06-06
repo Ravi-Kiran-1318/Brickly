@@ -119,7 +119,8 @@ router.post('/verify-account', async (req, res) => {
         email: user.email,
         role: user.role,
         phoneVerified: user.phoneVerified,
-        isVerified: user.isVerified
+        isVerified: user.isVerified,
+        jobRole: user.jobRole
       }
     });
   } catch (error) {

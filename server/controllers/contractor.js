@@ -72,6 +72,15 @@ exports.deleteNotification = async (req, res) => {
   res.json({ message: 'Notification deleted' });
 };
 
+exports.deleteAllNotifications = async (req, res) => {
+  try {
+    await Notification.deleteMany({ userId: req.user.id });
+    res.json({ message: 'All notifications deleted' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 // --- Interest Requests ---
 exports.getInterests = async (req, res) => {
   const interests = await InterestRequest.find({ contractorId: req.user.id }).sort({ createdAt: -1 });

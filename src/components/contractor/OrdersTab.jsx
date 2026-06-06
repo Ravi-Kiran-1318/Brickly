@@ -1,19 +1,24 @@
 import React, { useState, useEffect } from 'react';
 import api from '../../api';
-import { IconTruck, IconPackage, IconChevronRight, IconCircleCheck, IconCircleDashed, IconMap2, IconStarFilled, IconX, IconLoader2 } from '@tabler/icons-react';
+import { IconTruck, IconPackage, IconChevronRight, IconCircleCheck, IconCircleDashed, IconMap2, IconStarFilled, IconX, IconLoader2, IconMessageCircle } from '@tabler/icons-react';
 import RouteMap from '../RouteMap';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
 
 const OrdersTab = () => {
   const [orders, setOrders] = useState([]);
+  const [myReviews, setMyReviews] = useState([]);
   const [loading, setLoading] = useState(true);
   const [openMapOrderId, setOpenMapOrderId] = useState(null);
   const [reviewModalOrder, setReviewModalOrder] = useState(null);
 
   useEffect(() => {
-    api.get('/api/contractor/orders').then(res => {
-      setOrders(res.data);
+    Promise.all([
+      api.get('/api/contractor/orders'),
+      api.get('/api/reviews/contractor/my-reviews')
+    ]).then(([ordersRes, reviewsRes]) => {
+      setOrders(ordersRes.data);
+      setMyReviews(reviewsRes.data);
       setLoading(false);
     });
   }, []);
@@ -67,11 +72,20 @@ const OrdersTab = () => {
                    
                    {o.status === 'Delivered' && (
                      <div className="w-full mt-6">
-                       {o.isReviewed ? (
-                         <div className="w-full flex items-center justify-center gap-2 bg-green-50 dark:bg-green-900/20 text-green-600 px-4 py-3 rounded-2xl font-black text-sm uppercase tracking-widest border border-green-200 dark:border-green-800/30">
-                           <IconCircleCheck size={18} /> Reviewed
-                         </div>
-                       ) : new Date() > new Date(o.reviewDeadline) ? (
+                        {o.isReviewed ? (
+                          <div className="w-full flex flex-col gap-2">
+                             <div className="flex items-center justify-center gap-2 bg-green-50 dark:bg-green-900/20 text-green-600 px-4 py-3 rounded-2xl font-black text-sm uppercase tracking-widest border border-green-200 dark:border-green-800/30">
+                               <IconCircleCheck size={18} /> Reviewed
+                             </div>
+                             {myReviews.find(r => r.orderId === o._id)?.dealerReply && (
+                               <div className="bg-slate-50 dark:bg-slate-800 p-3 rounded-xl border border-slate-100 dark:border-slate-700 mt-2 relative">
+                                  <div className="absolute -top-2 right-6 w-0 h-0 border-x-8 border-x-transparent border-b-8 border-b-slate-50 dark:border-b-slate-800"></div>
+                                  <span className="flex items-center gap-1 text-[9px] font-black uppercase text-accent mb-1"><IconMessageCircle size={10} /> Dealer Reply</span>
+                                  <p className="text-[11px] text-slate-500 dark:text-slate-400 italic font-medium">{myReviews.find(r => r.orderId === o._id).dealerReply}</p>
+                               </div>
+                             )}
+                          </div>
+                        ) : new Date() > new Date(o.reviewDeadline) ? (
                          <div className="w-full text-center bg-slate-100 dark:bg-slate-800 text-slate-500 px-4 py-3 rounded-2xl font-black text-xs uppercase tracking-widest">
                            Review Window Closed
                          </div>

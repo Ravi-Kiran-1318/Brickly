@@ -6,6 +6,109 @@ const Notification = require('../models/Notification');
 const { sendMail } = require('../utils/mailer');
 const { getIO } = require('../socket');
 
+const ROLE_HIERARCHY = {
+  'Plumber': [
+    'Plumbing Helper',
+    'Junior Plumber',
+    'Plumber',
+    'Senior Plumber',
+    'Plumbing Supervisor',
+    'Plumbing Foreman'
+  ],
+  'Electrician': [
+    'Electrical Helper',
+    'Junior Electrician',
+    'Electrician',
+    'Senior Electrician',
+    'Electrical Supervisor',
+    'Electrical Foreman'
+  ],
+  'Mason': [
+    'Mason Helper',
+    'Junior Mason',
+    'Mason',
+    'Senior Mason',
+    'Masonry Supervisor',
+    'Masonry Foreman'
+  ],
+  'Carpenter': [
+    'Carpentry Helper',
+    'Junior Carpenter',
+    'Carpenter',
+    'Senior Carpenter',
+    'Carpentry Supervisor',
+    'Carpentry Foreman'
+  ],
+  'Welder': [
+    'Welding Helper',
+    'Junior Welder',
+    'Welder',
+    'Senior Welder',
+    'Welding Supervisor',
+    'Welding Foreman'
+  ],
+  'Painter': [
+    'Painting Helper',
+    'Junior Painter',
+    'Painter',
+    'Senior Painter',
+    'Painting Supervisor',
+    'Painting Foreman'
+  ],
+  'Tiler': [
+    'Tiling Helper',
+    'Junior Tiler',
+    'Tiler',
+    'Senior Tiler',
+    'Tiling Supervisor',
+    'Tiling Foreman'
+  ],
+  'Roofer': [
+    'Roofing Helper',
+    'Junior Roofer',
+    'Roofer',
+    'Senior Roofer',
+    'Roofing Supervisor',
+    'Roofing Foreman'
+  ],
+  'AC Technician': [
+    'AC Helper',
+    'Junior AC Technician',
+    'AC Technician',
+    'Senior AC Technician',
+    'HVAC Supervisor',
+    'HVAC Foreman'
+  ],
+  'Civil Engineer': [
+    'Junior Civil Engineer',
+    'Civil Engineer',
+    'Senior Civil Engineer',
+    'Civil Engineering Lead',
+    'Civil Engineering Manager'
+  ],
+  'Architect': [
+    'Junior Architect',
+    'Architect',
+    'Senior Architect',
+    'Principal Architect',
+    'Lead Architect'
+  ],
+  'Interior Designer': [
+    'Junior Interior Designer',
+    'Interior Designer',
+    'Senior Interior Designer',
+    'Lead Interior Designer',
+    'Principal Interior Designer'
+  ],
+  'Foreman': [
+    'Assistant Foreman',
+    'Foreman',
+    'Senior Foreman',
+    'General Foreman',
+    'Site Supervisor'
+  ]
+};
+
 // --- Profile ---
 exports.getProfile = async (req, res) => {
   try {
@@ -165,6 +268,16 @@ exports.createAvailability = async (req, res) => {
     const data = req.body;
     data.professionalId = req.user.id;
     
+    // Backend validation for jobRole based on registered trade
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    const userTrade = user.jobRole || '';
+    const validRoles = ROLE_HIERARCHY[userTrade];
+    if (validRoles && !validRoles.includes(data.jobRole)) {
+      return res.status(400).json({ message: 'Invalid job role for your registered trade' });
+    }
+
     if (req.files) {
       if (req.files.resume) data.resumeUrl = req.files.resume[0].path;
       if (req.files.certificates) data.certificateUrls = req.files.certificates.map(f => f.path);
@@ -217,6 +330,17 @@ exports.createAvailability = async (req, res) => {
 exports.updateAvailability = async (req, res) => {
   try {
     const data = req.body;
+    
+    // Backend validation for jobRole based on registered trade
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    const userTrade = user.jobRole || '';
+    const validRoles = ROLE_HIERARCHY[userTrade];
+    if (data.jobRole && validRoles && !validRoles.includes(data.jobRole)) {
+      return res.status(400).json({ message: 'Invalid job role for your registered trade' });
+    }
+
     if (req.files) {
       if (req.files.resume) data.resumeUrl = req.files.resume[0].path;
       if (req.files.certificates) data.certificateUrls = req.files.certificates.map(f => f.path);
@@ -298,6 +422,15 @@ exports.deleteNotification = async (req, res) => {
   try {
     await Notification.findOneAndDelete({ _id: req.params.id, userId: req.user.id });
     res.json({ message: 'Deleted' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+exports.deleteAllNotifications = async (req, res) => {
+  try {
+    await Notification.deleteMany({ userId: req.user.id });
+    res.json({ message: 'All notifications deleted' });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

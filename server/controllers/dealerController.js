@@ -332,15 +332,33 @@ exports.updateOrderStatus = async (req, res) => {
       order.deliveredAt = new Date();
       order.reviewDeadline = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
       
+      // Reduce Inventory Stock
+      for (const item of order.products) {
+        if (item.productId) {
+          const product = await Product.findById(item.productId);
+          if (product) {
+            product.stockQuantity = Math.max(0, product.stockQuantity - item.quantity);
+            product.inStock = product.stockQuantity > 0;
+            await product.save();
+          }
+        }
+      }
+      
       const io = req.app.get('io');
       
       // Send Email Reminder
       const contractor = await User.findById(order.contractorId);
       const dealer = await User.findById(order.dealerId);
       
-      await sendMail(contractor.email, `Your order from ${dealer.shopName} has been delivered — Share your experience`, 
-        `Hi ${contractor.name},\n\nYour order #${order._id.toString().slice(-6)} from ${dealer.shopName} has been delivered successfully. \n\nPlease take a moment to share your experience by leaving a review on Brickly. You have 30 days to submit your review.\n\nThank you!`
-      );
+      try {
+        await sendMail({
+          to: contractor.email,
+          subject: `Your order from ${dealer.shopName} has been delivered — Share your experience`, 
+          html: `Hi ${contractor.name},\n\nYour order #${order._id.toString().slice(-6)} from ${dealer.shopName} has been delivered successfully. \n\nPlease take a moment to share your experience by leaving a review on Brickly. You have 30 days to submit your review.\n\nThank you!`
+        });
+      } catch (err) {
+        console.error('Failed to send review reminder email:', err.message);
+      }
       
       // Socket and Notification
       const notification = new Notification({
@@ -351,7 +369,9 @@ exports.updateOrderStatus = async (req, res) => {
         actionTab: 'Orders'
       });
       await notification.save();
-      io.to(`user:${contractor._id}`).emit('contractor:reviewReminder', notification);
+      if (io) {
+        io.to(`user:${contractor._id}`).emit('contractor:reviewReminder', notification);
+      }
     }
     
     await order.save();
@@ -370,21 +390,27 @@ exports.updateOrderStatus = async (req, res) => {
     await notification.save();
 
     const io = req.app.get('io');
-    io.to(`user:${contractor._id}`).emit('contractor:orderStatusUpdate', {
-      orderId: order._id,
-      status,
-      notification
-    });
+    if (io) {
+      io.to(`user:${contractor._id}`).emit('contractor:orderStatusUpdate', {
+        orderId: order._id,
+        status,
+        notification
+      });
+    }
 
-    await sendMail({
-      to: contractor.email,
-      subject: `Order Status: ${status}`,
-      html: `
-        <h2>Order Update</h2>
-        <p>Your order status has been updated to <strong>${status}</strong> by ${dealer.shopName}.</p>
-        ${status === 'Dispatched' ? `<p>Expected Delivery: ${new Date(expectedDeliveryDate).toLocaleDateString()}</p>` : ''}
-      `
-    });
+    try {
+      await sendMail({
+        to: contractor.email,
+        subject: `Order Status: ${status}`,
+        html: `
+          <h2>Order Update</h2>
+          <p>Your order status has been updated to <strong>${status}</strong> by ${dealer.shopName}.</p>
+          ${status === 'Dispatched' && expectedDeliveryDate ? `<p>Expected Delivery: ${new Date(expectedDeliveryDate).toLocaleDateString()}</p>` : ''}
+        `
+      });
+    } catch (err) {
+      console.error('Failed to send order status email:', err.message);
+    }
 
     res.json(order);
   } catch (error) {
@@ -488,6 +514,15 @@ exports.deleteNotification = async (req, res) => {
   try {
     await Notification.findOneAndDelete({ _id: req.params.id, userId: req.user.id });
     res.json({ message: 'Deleted' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+exports.deleteAllNotifications = async (req, res) => {
+  try {
+    await Notification.deleteMany({ userId: req.user.id });
+    res.json({ message: 'All notifications deleted' });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
