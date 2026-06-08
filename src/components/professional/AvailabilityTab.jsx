@@ -7,6 +7,7 @@ import {
   IconEyeOff, IconAlertTriangle, IconPackage
 } from '@tabler/icons-react';
 import { useAuth } from '../../context/AuthContext';
+import { toast } from 'react-hot-toast';
 
 const ROLE_HIERARCHY = {
   'Plumber': [
@@ -135,9 +136,44 @@ const AvailabilityTab = () => {
   const [certificates, setCertificates] = useState([]);
   const [skillInput, setSkillInput] = useState('');
 
+  // Features State
+  const [directHireRequests, setDirectHireRequests] = useState([]);
+  const [rejectingId, setRejectingId] = useState(null); // id of direct hire request being rejected
+  const [rejectionReason, setRejectionReason] = useState('');
+  const [rejectLoading, setRejectLoading] = useState(false);
+  const [joinLoading, setJoinLoading] = useState(false);
+  const [joinConfirm, setJoinConfirm] = useState(null);
+
+  // Resignation State
+  const [isResignModalOpen, setIsResignModalOpen] = useState(false);
+  const [resignData, setResignData] = useState({ reason: '', comments: '' });
+  const [resignLoading, setResignLoading] = useState(false);
+  const [activeJoinId, setActiveJoinId] = useState(null); // id of the HiredWorker or Application/DirectHireRequest
+
+  const [requestStayMessage, setRequestStayMessage] = useState(null);
+
   useEffect(() => {
     fetchProfileAndAvailability();
+    fetchDirectHireRequests();
+    fetchNotifications();
   }, [user]);
+
+  const fetchNotifications = async () => {
+    try {
+      const res = await api.get('/api/notifications');
+      const stayNotif = res.data.find(n => n.title === 'Contractor Wants You to Stay' && !n.isRead);
+      if (stayNotif) {
+        setRequestStayMessage(stayNotif.message);
+      }
+    } catch (err) { console.error('Failed to fetch notifications:', err); }
+  };
+
+  const fetchDirectHireRequests = async () => {
+    try {
+      const res = await api.get('/api/professional/direct-hire-requests');
+      setDirectHireRequests(res.data);
+    } catch (err) { console.error('Failed to fetch direct hire requests:', err); }
+  };
 
   const fetchProfileAndAvailability = async () => {
     try {
@@ -222,6 +258,45 @@ const AvailabilityTab = () => {
     }
   };
 
+  const handleJoinDirectHire = async (requestId) => {
+    setJoinLoading(true);
+    try {
+      await api.put(`/api/professional/direct-hire-requests/${requestId}/join`);
+      toast.success('🎉 Successfully joined position!', { duration: 4000 });
+      setJoinConfirm(null);
+      // Update state
+      setDirectHireRequests(prev => prev.map(req => {
+        if (req._id === requestId) return { ...req, status: 'Joined' };
+        if (req.status === 'Pending') return { ...req, status: 'Withdrawn' };
+        return req;
+      }));
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to join');
+    } finally {
+      setJoinLoading(false);
+    }
+  };
+
+  const handleRejectDirectHire = async (requestId) => {
+    if (!rejectionReason || rejectionReason.length < 10) {
+      return toast.error('Please enter at least 10 characters.');
+    }
+    setRejectLoading(true);
+    try {
+      await api.put(`/api/professional/direct-hire-requests/${requestId}/reject`, { rejectionReason });
+      toast.success('Your response has been submitted.');
+      setRejectingId(null);
+      setRejectionReason('');
+      setDirectHireRequests(prev => prev.map(req => 
+        req._id === requestId ? { ...req, status: 'Rejected' } : req
+      ));
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to reject');
+    } finally {
+      setRejectLoading(false);
+    }
+  };
+
   const addSkill = () => {
     if (skillInput && !formData.skillTags.includes(skillInput)) {
       setFormData({ ...formData, skillTags: [...formData.skillTags, skillInput] });
@@ -237,6 +312,130 @@ const AvailabilityTab = () => {
 
   return (
     <div className="space-y-8">
+      {/* Request to Stay Banner */}
+      {requestStayMessage && (
+        <motion.div 
+          initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}
+          className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-3xl p-6 flex flex-col md:flex-row items-center gap-4 justify-between"
+        >
+          <div className="flex items-start gap-4">
+            <div className="w-12 h-12 bg-blue-100 dark:bg-blue-900/40 rounded-2xl flex items-center justify-center text-blue-600 shrink-0">
+              <IconAlertTriangle size={24} />
+            </div>
+            <div>
+              <h3 className="font-black text-blue-900 dark:text-blue-100 mb-1">Contractor Requested You to Stay</h3>
+              <p className="text-sm font-bold text-blue-700 dark:text-blue-300">{requestStayMessage}</p>
+            </div>
+          </div>
+          <button 
+            onClick={() => setRequestStayMessage(null)} 
+            className="px-6 py-2.5 bg-blue-600 text-white font-black rounded-xl hover:bg-blue-700 transition-all text-sm shrink-0"
+          >
+            Acknowledge
+          </button>
+        </motion.div>
+      )}
+
+      {/* Direct Hire Requests Section */}
+      {directHireRequests.length > 0 && (
+        <div className="space-y-4">
+          <h2 className="text-2xl font-black text-primary dark:text-white">Direct Hire Requests</h2>
+          <div className="grid grid-cols-1 gap-4">
+            {directHireRequests.map(req => (
+              <div key={req._id} className={`bg-white dark:bg-slate-900 rounded-[24px] border ${req.status === 'Rejected' ? 'border-red-200 dark:border-red-900/50 opacity-75' : 'border-slate-200 dark:border-slate-800'} p-6 shadow-sm overflow-hidden`}>
+                <div className="flex justify-between items-start mb-4">
+                  <div>
+                    <h3 className="text-lg font-black text-primary dark:text-white">{req.contractorId?.companyName || req.contractorId?.name}</h3>
+                    <p className="text-sm font-bold text-slate-500">{req.jobRole}</p>
+                  </div>
+                  <span className={`text-[10px] font-black uppercase px-2.5 py-1 rounded-lg border ${req.status === 'Pending' ? 'bg-orange-100 text-orange-600 border-orange-200' : req.status === 'Joined' ? 'bg-green-100 text-green-600 border-green-200' : 'bg-red-100 text-red-600 border-red-200'}`}>
+                    {req.status}
+                  </span>
+                </div>
+                
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                  {req.workSiteLocation && (
+                    <div>
+                      <p className="text-[10px] font-black uppercase text-slate-400">Location</p>
+                      <p className="text-sm font-bold text-primary dark:text-white">{req.workSiteLocation}</p>
+                    </div>
+                  )}
+                  {req.salary && (
+                    <div>
+                      <p className="text-[10px] font-black uppercase text-slate-400">Salary</p>
+                      <p className="text-sm font-black text-accent">{req.salary}</p>
+                    </div>
+                  )}
+                  {req.duration && (
+                    <div>
+                      <p className="text-[10px] font-black uppercase text-slate-400">Duration</p>
+                      <p className="text-sm font-bold text-primary dark:text-white">{req.duration}</p>
+                    </div>
+                  )}
+                  <div>
+                    <p className="text-[10px] font-black uppercase text-slate-400">Requested On</p>
+                    <p className="text-sm font-bold text-primary dark:text-white">{new Date(req.createdAt).toLocaleDateString()}</p>
+                  </div>
+                </div>
+
+                {req.status === 'Pending' && (
+                  <div className="flex flex-col gap-4 pt-4 border-t border-slate-100 dark:border-slate-800">
+                    <div className="flex items-center gap-3">
+                      <button 
+                        onClick={() => setJoinConfirm(req._id)}
+                        className="flex-1 bg-green-500 hover:bg-green-600 text-white font-black py-2.5 rounded-xl transition-all"
+                      >
+                        Join Now
+                      </button>
+                      <button 
+                        onClick={() => setRejectingId(rejectingId === req._id ? null : req._id)}
+                        className="flex-1 bg-red-100 dark:bg-red-900/30 text-red-600 hover:bg-red-200 dark:hover:bg-red-900/50 font-black py-2.5 rounded-xl transition-all"
+                      >
+                        Reject
+                      </button>
+                    </div>
+
+                    {/* Inline Reject Area */}
+                    <AnimatePresence>
+                      {rejectingId === req._id && (
+                        <motion.div 
+                          initial={{ height: 0, opacity: 0 }} 
+                          animate={{ height: 'auto', opacity: 1 }} 
+                          exit={{ height: 0, opacity: 0 }}
+                          className="overflow-hidden"
+                        >
+                          <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
+                            <textarea
+                              value={rejectionReason}
+                              onChange={(e) => setRejectionReason(e.target.value.slice(0, 300))}
+                              placeholder="Please mention your reason for rejection..."
+                              className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-3 text-sm font-medium outline-none focus:ring-2 focus:ring-red-500/50 resize-none h-24 mb-2"
+                            />
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-bold text-slate-400">{rejectionReason.length}/300</span>
+                              <div className="flex gap-2">
+                                <button onClick={() => { setRejectingId(null); setRejectionReason(''); }} className="px-4 py-1.5 rounded-lg text-xs font-bold text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700">Cancel</button>
+                                <button 
+                                  onClick={() => handleRejectDirectHire(req._id)}
+                                  disabled={rejectLoading || rejectionReason.length < 10}
+                                  className="px-4 py-1.5 rounded-lg text-xs font-black bg-red-500 text-white hover:bg-red-600 disabled:opacity-50"
+                                >
+                                  {rejectLoading ? 'Submitting...' : 'Submit'}
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Visibility Toggle Card */}
       <div className="bg-white dark:bg-slate-900 p-8 rounded-[40px] border border-slate-200 dark:border-slate-800 flex flex-col md:flex-row items-center justify-between gap-8 shadow-sm">
         <div className="flex items-center gap-6">
@@ -451,6 +650,95 @@ const AvailabilityTab = () => {
             </AnimatePresence>
          </div>
       </div>
+
+      {/* Join Confirmation Modal */}
+      <AnimatePresence>
+        {joinConfirm && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="bg-white dark:bg-slate-900 rounded-[32px] max-w-md w-full p-8 shadow-2xl border border-slate-200 dark:border-slate-800">
+              <div className="w-16 h-16 bg-blue-100 text-blue-500 rounded-full flex items-center justify-center mx-auto mb-6">
+                <IconCircleCheck size={32} />
+              </div>
+              <h2 className="text-2xl font-black text-center text-primary dark:text-white mb-4">Confirm Joining</h2>
+              <p className="text-slate-500 text-center font-medium mb-8">Joining this position will automatically withdraw your other pending applications. Are you sure you want to join?</p>
+              <div className="flex gap-4">
+                <button onClick={() => setJoinConfirm(null)} className="flex-1 py-4 rounded-2xl font-black text-slate-500 hover:bg-slate-100 transition-all">Cancel</button>
+                <button onClick={() => handleJoinDirectHire(joinConfirm)} disabled={joinLoading} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-4 rounded-2xl font-black transition-all flex items-center justify-center gap-2">
+                  {joinLoading ? <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span> : 'Confirm'}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Resignation Modal */}
+      <AnimatePresence>
+        {isResignModalOpen && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="bg-white dark:bg-slate-900 rounded-[32px] max-w-lg w-full p-8 shadow-2xl border border-slate-200 dark:border-slate-800">
+              <h2 className="text-2xl font-black text-primary dark:text-white mb-4">Submit Resignation</h2>
+              <p className="text-slate-500 font-medium mb-6">You are required to give a minimum of 7 days notice before resignation. Your last working date will be {new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toLocaleDateString()}.</p>
+              
+              <div className="space-y-4 mb-8">
+                <div>
+                  <label className="block text-xs font-black uppercase text-slate-400 mb-2">Reason</label>
+                  <select 
+                    value={resignData.reason} 
+                    onChange={(e) => setResignData({ ...resignData, reason: e.target.value })}
+                    className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-2xl p-4 focus:ring-2 focus:ring-accent transition-all dark:text-white font-bold"
+                  >
+                    <option value="">Select a reason</option>
+                    <option value="Better Opportunity">Better Opportunity</option>
+                    <option value="Personal Reasons">Personal Reasons</option>
+                    <option value="Salary Dissatisfaction">Salary Dissatisfaction</option>
+                    <option value="Work Condition Issues">Work Condition Issues</option>
+                    <option value="Relocation">Relocation</option>
+                    <option value="Project Completed">Project Completed</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-black uppercase text-slate-400 mb-2">Additional Comments (Optional)</label>
+                  <textarea 
+                    value={resignData.comments} 
+                    onChange={(e) => setResignData({ ...resignData, comments: e.target.value.slice(0, 300) })}
+                    placeholder="Any additional details you want to share..."
+                    className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-2xl p-4 focus:ring-2 focus:ring-accent transition-all dark:text-white font-medium resize-none h-24"
+                  />
+                  <div className="text-right text-xs font-bold text-slate-400 mt-1">{resignData.comments.length}/300</div>
+                </div>
+              </div>
+
+              <div className="flex gap-4">
+                <button onClick={() => setIsResignModalOpen(false)} className="flex-1 py-4 rounded-2xl font-black text-slate-500 hover:bg-slate-100 transition-all">Cancel</button>
+                <button 
+                  onClick={async () => {
+                    if (!resignData.reason) return toast.error('Please select a reason.');
+                    setResignLoading(true);
+                    try {
+                      await api.post('/api/professional/resign', { 
+                        directHireRequestId: activeJoinId, 
+                        resignationReason: resignData.reason, 
+                        additionalComments: resignData.comments 
+                      });
+                      toast.success('Resignation submitted successfully.');
+                      setIsResignModalOpen(false);
+                      fetchDirectHireRequests();
+                    } catch (err) { toast.error(err.response?.data?.message || 'Failed to submit resignation'); }
+                    finally { setResignLoading(false); }
+                  }} 
+                  disabled={resignLoading || !resignData.reason} 
+                  className="flex-1 bg-red-500 hover:bg-red-600 text-white py-4 rounded-2xl font-black transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  {resignLoading ? <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span> : 'Submit Resignation'}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
     </div>
   );
 };

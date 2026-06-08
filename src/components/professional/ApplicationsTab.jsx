@@ -1,5 +1,6 @@
 import React, { useState, useEffect, Suspense, lazy } from 'react';
 import api from '../../api';
+import socket from '../../socket';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
@@ -7,7 +8,8 @@ import {
   IconClipboardText, IconBuildingSkyscraper, IconMapPin, 
   IconCalendarTime, IconCurrencyRupee, IconCircleCheck, 
   IconX, IconClock, IconEye, IconUserCircle, IconMapRoute, 
-  IconAlertCircle, IconHandStop, IconPlayerPlay
+  IconAlertCircle, IconHandStop, IconPlayerPlay, IconRefresh,
+  IconBriefcase
 } from '@tabler/icons-react';
 
 const RouteMap = lazy(() => import('./RouteMap'));
@@ -34,23 +36,70 @@ const STATUS_COLORS = {
   'Position Filled': 'bg-amber-100 text-amber-600 border-amber-200'
 };
 
+const LoadingSkeleton = () => (
+  <div className="space-y-6">
+    {[1, 2, 3].map(i => (
+      <div key={i} className="bg-white dark:bg-slate-900 rounded-[35px] border border-slate-200 dark:border-slate-800 p-8 animate-pulse">
+        <div className="flex items-center gap-6 mb-6">
+          <div className="w-16 h-16 rounded-3xl bg-slate-200 dark:bg-slate-800" />
+          <div className="flex-1 space-y-2">
+            <div className="h-5 bg-slate-200 dark:bg-slate-800 rounded-lg w-2/5" />
+            <div className="h-4 bg-slate-100 dark:bg-slate-800/60 rounded-lg w-1/4" />
+          </div>
+          <div className="h-6 w-20 bg-slate-200 dark:bg-slate-800 rounded-lg" />
+        </div>
+        <div className="grid grid-cols-3 gap-6">
+          <div className="space-y-2"><div className="h-3 bg-slate-100 dark:bg-slate-800/60 rounded w-1/2" /><div className="h-5 bg-slate-200 dark:bg-slate-800 rounded w-3/4" /></div>
+          <div className="space-y-2"><div className="h-3 bg-slate-100 dark:bg-slate-800/60 rounded w-1/2" /><div className="h-5 bg-slate-200 dark:bg-slate-800 rounded w-3/4" /></div>
+          <div className="space-y-2"><div className="h-3 bg-slate-100 dark:bg-slate-800/60 rounded w-1/2" /><div className="h-5 bg-slate-200 dark:bg-slate-800 rounded w-3/4" /></div>
+        </div>
+      </div>
+    ))}
+  </div>
+);
+
 const ApplicationsTab = ({ openMapJobId, setOpenMapJobId }) => {
   const { user } = useAuth();
   const [applications, setApplications] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [joinConfirm, setJoinConfirm] = useState(null); // applicationId being confirmed
+  const [fetchError, setFetchError] = useState(null);
+  const [joinConfirm, setJoinConfirm] = useState(null);
   const [joinLoading, setJoinLoading] = useState(false);
 
   useEffect(() => {
     fetchApplications();
   }, []);
 
+  // Real-time socket listener for status updates
+  useEffect(() => {
+    const handleStatusUpdate = (data) => {
+      console.log('Received applicationStatusUpdate:', data);
+      setApplications(prev => prev.map(app =>
+        app._id === data.applicationId
+          ? { ...app, status: data.newStatus }
+          : app
+      ));
+      if (data.newStatus === 'Hired') {
+        toast.success('🏆 You have been hired! Check your Applications tab.', { duration: 5000 });
+      }
+    };
+
+    socket.on('applicationStatusUpdate', handleStatusUpdate);
+
+    return () => {
+      socket.off('applicationStatusUpdate', handleStatusUpdate);
+    };
+  }, []);
+
   const fetchApplications = async () => {
+    setLoading(true);
+    setFetchError(null);
     try {
       const res = await api.get('/api/professional/applications');
       setApplications(res.data);
     } catch (err) {
       console.error(err);
+      setFetchError('Failed to load your applications. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -75,7 +124,57 @@ const ApplicationsTab = ({ openMapJobId, setOpenMapJobId }) => {
     }
   };
 
-  if (loading) return <div className="p-8 text-center text-slate-400 font-bold">Loading your applications...</div>;
+  const handleReject = async (applicationId, reason) => {
+    try {
+      await api.put(`/api/professional/applications/${applicationId}/reject`, { rejectionReason: reason });
+      toast.success('Your response has been submitted.');
+      setApplications(prev => prev.map(app => app._id === applicationId ? { ...app, status: 'Rejected' } : app));
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to reject application');
+      throw err;
+    }
+  };
+
+  const handleResignSubmit = async (applicationId, resignData) => {
+    try {
+      await api.post('/api/professional/resign', { 
+        applicationId, 
+        resignationReason: resignData.reason, 
+        additionalComments: resignData.comments 
+      });
+      toast.success('Resignation submitted successfully.');
+      fetchApplications();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to submit resignation');
+      throw err;
+    }
+  };
+
+  if (loading) return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between mb-2">
+        <div>
+          <h2 className="text-2xl font-black text-primary dark:text-white">Applied Jobs</h2>
+          <p className="text-sm text-slate-400 font-medium tracking-tight">Track the progress of your job applications.</p>
+        </div>
+      </div>
+      <LoadingSkeleton />
+    </div>
+  );
+
+  if (fetchError) return (
+    <div className="py-20 text-center bg-white dark:bg-slate-900 rounded-[40px] border-2 border-dashed border-red-200 dark:border-red-800">
+      <IconAlertCircle size={60} className="mx-auto text-red-300 mb-4" />
+      <h3 className="text-xl font-black text-primary dark:text-white mb-2">Something Went Wrong</h3>
+      <p className="text-slate-400 font-medium mb-6 max-w-sm mx-auto">{fetchError}</p>
+      <button 
+        onClick={fetchApplications}
+        className="bg-accent text-white px-8 py-3 rounded-2xl font-black flex items-center gap-2 mx-auto hover:bg-orange-600 transition-all"
+      >
+        <IconRefresh size={18} /> Retry
+      </button>
+    </div>
+  );
 
   return (
     <div className="space-y-6">
@@ -84,9 +183,18 @@ const ApplicationsTab = ({ openMapJobId, setOpenMapJobId }) => {
             <h2 className="text-2xl font-black text-primary dark:text-white">Applied Jobs</h2>
             <p className="text-sm text-slate-400 font-medium tracking-tight">Track the progress of your job applications.</p>
          </div>
-         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-6 py-2 rounded-2xl">
-            <span className="text-xs font-black text-slate-400 uppercase tracking-widest">Total: </span>
-            <span className="text-lg font-black text-primary dark:text-white ml-2">{applications.length}</span>
+         <div className="flex items-center gap-3">
+            <button 
+              onClick={fetchApplications}
+              className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-400 hover:text-accent hover:bg-accent/10 transition-all"
+              title="Refresh applications"
+            >
+              <IconRefresh size={18} />
+            </button>
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-6 py-2 rounded-2xl">
+               <span className="text-xs font-black text-slate-400 uppercase tracking-widest">Total: </span>
+               <span className="text-lg font-black text-primary dark:text-white ml-2">{applications.length}</span>
+            </div>
          </div>
       </div>
 
@@ -99,11 +207,14 @@ const ApplicationsTab = ({ openMapJobId, setOpenMapJobId }) => {
             openMapJobId={openMapJobId}
             setOpenMapJobId={setOpenMapJobId}
             onJoinClick={() => setJoinConfirm(app._id)}
+            onReject={handleReject}
+            onResign={handleResignSubmit}
           />
         )) : (
           <div className="py-20 text-center bg-white dark:bg-slate-900 rounded-[40px] border-2 border-dashed border-slate-200 dark:border-slate-800">
-             <IconClipboardText size={60} className="mx-auto text-slate-300 mb-4" />
-             <p className="text-slate-400 font-bold">You haven't applied to any jobs yet.</p>
+             <IconBriefcase size={60} className="mx-auto text-slate-300 mb-4" />
+             <h3 className="text-xl font-black text-primary dark:text-white mb-2">No Applications Yet</h3>
+             <p className="text-slate-400 font-medium max-w-sm mx-auto">You haven't applied to any jobs yet. Browse the job feed to find opportunities matching your trade.</p>
           </div>
         )}
       </div>
@@ -164,9 +275,17 @@ const ApplicationsTab = ({ openMapJobId, setOpenMapJobId }) => {
   );
 };
 
-const ApplicationCard = ({ application, user, openMapJobId, setOpenMapJobId, onJoinClick }) => {
+const ApplicationCard = ({ application, user, openMapJobId, setOpenMapJobId, onJoinClick, onReject, onResign }) => {
   const job = application.jobPostId;
   const contractor = application.contractorId;
+
+  const [isRejecting, setIsRejecting] = useState(false);
+  const [rejectionReason, setRejectionReason] = useState('');
+  const [rejectLoading, setRejectLoading] = useState(false);
+
+  const [isResignModalOpen, setIsResignModalOpen] = useState(false);
+  const [resignData, setResignData] = useState({ reason: '', comments: '' });
+  const [resignLoading, setResignLoading] = useState(false);
 
   if (!job) return null;
 
@@ -183,7 +302,7 @@ const ApplicationCard = ({ application, user, openMapJobId, setOpenMapJobId, onJ
     <motion.div 
       initial={{ opacity: 0, x: -20 }}
       animate={{ opacity: 1, x: 0 }}
-      className="bg-white dark:bg-slate-900 rounded-[35px] border border-slate-200 dark:border-slate-800 p-8 hover:shadow-lg hover:border-accent transition-all relative overflow-hidden"
+      className={`bg-white dark:bg-slate-900 rounded-[35px] border ${application.status === 'Rejected' ? 'border-red-200 dark:border-red-900/50 opacity-75' : 'border-slate-200 dark:border-slate-800'} p-8 hover:shadow-lg hover:border-accent transition-all relative overflow-hidden`}
     >
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
         <div className="flex items-center gap-6">
@@ -240,11 +359,28 @@ const ApplicationCard = ({ application, user, openMapJobId, setOpenMapJobId, onJ
             )}
             
             {application.status === 'Hired' && (
+              <>
+                <button 
+                  onClick={onJoinClick}
+                  className="flex items-center gap-2 text-xs font-black px-6 py-2.5 rounded-xl bg-green-500 text-white hover:bg-green-600 shadow-lg shadow-green-500/20 transition-all hover:-translate-y-0.5 active:scale-95"
+                >
+                  <IconPlayerPlay size={16} /> Join Now
+                </button>
+                <button 
+                  onClick={() => setIsRejecting(!isRejecting)}
+                  className="flex items-center gap-2 text-xs font-black px-6 py-2.5 rounded-xl bg-red-100 text-red-600 hover:bg-red-200 transition-all"
+                >
+                  <IconX size={16} /> Reject
+                </button>
+              </>
+            )}
+
+            {application.status === 'Joined' && (
               <button 
-                onClick={onJoinClick}
-                className="flex items-center gap-2 text-xs font-black px-6 py-2.5 rounded-xl bg-green-500 text-white hover:bg-green-600 shadow-lg shadow-green-500/20 transition-all hover:-translate-y-0.5 active:scale-95"
+                onClick={() => setIsResignModalOpen(true)}
+                className="flex items-center gap-2 text-xs font-black px-6 py-2.5 rounded-xl bg-slate-100 text-slate-600 hover:bg-red-100 hover:text-red-600 transition-all"
               >
-                <IconPlayerPlay size={16} /> Join Now
+                Resign from this Position
               </button>
             )}
          </div>
@@ -263,6 +399,109 @@ const ApplicationCard = ({ application, user, openMapJobId, setOpenMapJobId, onJ
             </div>
          </div>
       </div>
+
+      {/* Inline Reject Area */}
+      <AnimatePresence>
+        {isRejecting && application.status === 'Hired' && (
+          <motion.div 
+            initial={{ height: 0, opacity: 0 }} 
+            animate={{ height: 'auto', opacity: 1 }} 
+            exit={{ height: 0, opacity: 0 }}
+            className="overflow-hidden mt-4"
+          >
+            <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
+              <textarea
+                value={rejectionReason}
+                onChange={(e) => setRejectionReason(e.target.value.slice(0, 300))}
+                placeholder="Please mention your reason for rejection..."
+                className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-3 text-sm font-medium outline-none focus:ring-2 focus:ring-red-500/50 resize-none h-24 mb-2"
+              />
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-400">{rejectionReason.length}/300</span>
+                <div className="flex gap-2">
+                  <button onClick={() => { setIsRejecting(false); setRejectionReason(''); }} className="px-4 py-1.5 rounded-lg text-xs font-bold text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700">Cancel</button>
+                  <button 
+                    onClick={async () => {
+                      if (rejectionReason.length < 10) return toast.error('Please enter at least 10 characters.');
+                      setRejectLoading(true);
+                      try {
+                        await onReject(application._id, rejectionReason);
+                        setIsRejecting(false);
+                      } catch (err) { }
+                      finally { setRejectLoading(false); }
+                    }}
+                    disabled={rejectLoading || rejectionReason.length < 10}
+                    className="px-4 py-1.5 rounded-lg text-xs font-black bg-red-500 text-white hover:bg-red-600 disabled:opacity-50"
+                  >
+                    {rejectLoading ? 'Submitting...' : 'Submit'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Resignation Modal */}
+      <AnimatePresence>
+        {isResignModalOpen && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="bg-white dark:bg-slate-900 rounded-[32px] max-w-lg w-full p-8 shadow-2xl border border-slate-200 dark:border-slate-800">
+              <h2 className="text-2xl font-black text-primary dark:text-white mb-4">Submit Resignation</h2>
+              <p className="text-slate-500 font-medium mb-6">You are required to give a minimum of 7 days notice before resignation. Your last working date will be {new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toLocaleDateString()}.</p>
+              
+              <div className="space-y-4 mb-8">
+                <div>
+                  <label className="block text-xs font-black uppercase text-slate-400 mb-2">Reason</label>
+                  <select 
+                    value={resignData.reason} 
+                    onChange={(e) => setResignData({ ...resignData, reason: e.target.value })}
+                    className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-2xl p-4 focus:ring-2 focus:ring-accent transition-all dark:text-white font-bold"
+                  >
+                    <option value="">Select a reason</option>
+                    <option value="Better Opportunity">Better Opportunity</option>
+                    <option value="Personal Reasons">Personal Reasons</option>
+                    <option value="Salary Dissatisfaction">Salary Dissatisfaction</option>
+                    <option value="Work Condition Issues">Work Condition Issues</option>
+                    <option value="Relocation">Relocation</option>
+                    <option value="Project Completed">Project Completed</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-black uppercase text-slate-400 mb-2">Additional Comments (Optional)</label>
+                  <textarea 
+                    value={resignData.comments} 
+                    onChange={(e) => setResignData({ ...resignData, comments: e.target.value.slice(0, 300) })}
+                    placeholder="Any additional details you want to share..."
+                    className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-2xl p-4 focus:ring-2 focus:ring-accent transition-all dark:text-white font-medium resize-none h-24"
+                  />
+                  <div className="text-right text-xs font-bold text-slate-400 mt-1">{resignData.comments.length}/300</div>
+                </div>
+              </div>
+
+              <div className="flex gap-4">
+                <button onClick={() => setIsResignModalOpen(false)} className="flex-1 py-4 rounded-2xl font-black text-slate-500 hover:bg-slate-100 transition-all">Cancel</button>
+                <button 
+                  onClick={async () => {
+                    if (!resignData.reason) return toast.error('Please select a reason.');
+                    setResignLoading(true);
+                    try {
+                      await onResign(application._id, resignData);
+                      setIsResignModalOpen(false);
+                    } catch (err) { }
+                    finally { setResignLoading(false); }
+                  }} 
+                  disabled={resignLoading || !resignData.reason} 
+                  className="flex-1 bg-red-500 hover:bg-red-600 text-white py-4 rounded-2xl font-black transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  {resignLoading ? <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span> : 'Submit Resignation'}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Route Map */}
       <AnimatePresence>

@@ -1,0 +1,35 @@
+const NOTIFICATION_TABS = {
+  // Contractor tabs
+  CONTRACTOR_OVERVIEW: 'overview',
+  CONTRACTOR_JOB_POSTS: 'job-posts',
+  CONTRACTOR_BROWSE_PROFESSIONALS: 'browse-professionals',
+  CONTRACTOR_PORTFOLIO: 'portfolio',
+  CONTRACTOR_FIND_MATERIALS: 'find-materials',
+  CONTRACTOR_MY_QUOTES: 'my-quotes',
+  CONTRACTOR_ORDERS: 'orders',
+  CONTRACTOR_DEALS_FEED: 'deals-feed',
+  CONTRACTOR_REVIEWS: 'reviews',
+  CONTRACTOR_NOTIFICATIONS: 'notifications',
+
+  // Material Dealer tabs
+  DEALER_OVERVIEW: 'overview',
+  DEALER_INVENTORY: 'inventory',
+  DEALER_QUOTE_REQUESTS: 'quote-requests',
+  DEALER_ORDERS: 'orders',
+  DEALER_DEALS_BOARD: 'deals-board',
+  DEALER_NOTIFICATIONS: 'notifications',
+
+  // CraftLink Professional tabs
+  PROFESSIONAL_JOB_FEED: 'job-feed',
+  PROFESSIONAL_MY_AVAILABILITY: 'my-availability',
+  PROFESSIONAL_MY_APPLICATIONS: 'my-applications',
+  PROFESSIONAL_REVIEWS: 'reviews',
+  PROFESSIONAL_NOTIFICATIONS: 'notifications',
+
+  // Customer tabs
+  CUSTOMER_MY_PROJECTS: 'my-projects',
+  CUSTOMER_FIND_CONTRACTORS: 'find-contractors',
+  CUSTOMER_NOTIFICATIONS: 'notifications'
+};
+
+module.exports = NOTIFICATION_TABS;

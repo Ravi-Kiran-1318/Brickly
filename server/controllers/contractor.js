@@ -6,6 +6,8 @@ const InterestRequest = require('../models/InterestRequest');
 const Review = require('../models/Review');
 const Contract = require('../models/Contract');
 const HiredWorker = require('../models/HiredWorker');
+const { sendMail } = require('../utils/mailer');
+const { getIO } = require('../socket');
 
 exports.getProfile = async (req, res) => {
   const user = await User.findById(req.user.id).select('-password');
@@ -106,3 +108,82 @@ exports.getMyReviews = async (req, res) => {
   res.json(reviews);
 };
 
+// --- Resignation Response ---
+exports.acceptResignation = async (req, res) => {
+  try {
+    const { hiredWorkerId } = req.params;
+    const worker = await HiredWorker.findOne({ _id: hiredWorkerId, contractorId: req.user.id });
+    if (!worker) return res.status(404).json({ message: 'Hired worker record not found' });
+    
+    worker.status = 'ResignationAccepted';
+    await worker.save();
+
+    const contractor = await User.findById(req.user.id);
+    const profUser = await User.findById(worker.professionalId);
+    
+    const notification = new Notification({
+      userId: worker.professionalId,
+      title: 'Resignation Accepted',
+      message: `${contractor.companyName || contractor.name} has accepted your resignation. Your last working date is ${worker.lastWorkingDate.toLocaleDateString()}.`,
+      type: 'Job',
+      actionTab: 'my-availability'
+    });
+    await notification.save();
+
+    const io = getIO();
+    io.to(`user:${worker.professionalId}`).emit('notification', { notification });
+
+    await sendMail({
+      to: profUser.email,
+      subject: 'Resignation Accepted',
+      html: `
+        <p><strong>${contractor.companyName || contractor.name}</strong> has accepted your resignation.</p>
+        <p><strong>Last Working Date:</strong> ${worker.lastWorkingDate.toLocaleDateString()}</p>
+      `
+    });
+
+    res.json({ message: 'Resignation accepted', worker });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+exports.requestStay = async (req, res) => {
+  try {
+    const { hiredWorkerId } = req.params;
+    const { message } = req.body;
+    
+    const worker = await HiredWorker.findOne({ _id: hiredWorkerId, contractorId: req.user.id });
+    if (!worker) return res.status(404).json({ message: 'Hired worker record not found' });
+
+    const contractor = await User.findById(req.user.id);
+    const profUser = await User.findById(worker.professionalId);
+    
+    const notification = new Notification({
+      userId: worker.professionalId,
+      title: 'Contractor Wants You to Stay',
+      message: `${contractor.companyName || contractor.name} has requested you to reconsider your resignation.${message ? ' Message: ' + message : ''}`,
+      type: 'Job',
+      actionTab: 'my-availability',
+      data: { requestStayMessage: message, hiredWorkerId: worker._id } // store data to display banner
+    });
+    await notification.save();
+
+    const io = getIO();
+    io.to(`user:${worker.professionalId}`).emit('notification', { notification });
+
+    await sendMail({
+      to: profUser.email,
+      subject: 'Contractor Request to Reconsider Resignation',
+      html: `
+        <p><strong>${contractor.companyName || contractor.name}</strong> has requested you to reconsider your resignation.</p>
+        ${message ? `<p><strong>Message:</strong> ${message}</p>` : ''}
+        <p>Log in to BuildR to confirm or cancel your resignation.</p>
+      `
+    });
+
+    res.json({ message: 'Request to stay sent', worker });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};

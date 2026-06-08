@@ -152,32 +152,73 @@ const OverviewTab = ({ setActiveTab }) => {
             <h3 className="text-xl font-black text-primary dark:text-white uppercase tracking-tight">Active Team Members</h3>
             <button onClick={() => setActiveTab('Browse Professionals')} className="text-xs font-black text-accent p-2 bg-accent/10 rounded-xl hover:bg-accent hover:text-white transition-all tracking-widest uppercase">Hire More</button>
          </div>
-         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+         <div className="grid grid-cols-1 gap-6">
             {team.length > 0 ? team.map((member, i) => (
-              <div key={member._id || i} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 rounded-[32px] flex items-center gap-4 hover:border-accent transition-all shadow-sm group">
-                 <div className="w-14 h-14 rounded-2xl bg-slate-50 dark:bg-slate-800 flex items-center justify-center font-black text-xl text-primary dark:text-white border border-slate-100 dark:border-slate-700 uppercase group-hover:scale-110 transition-transform">
-                    {member.professionalId?.name?.charAt(0) || 'P'}
+              <div key={member._id || i} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 rounded-[32px] flex flex-col gap-4 hover:border-accent transition-all shadow-sm group">
+                 <div className="flex items-center gap-4">
+                   <div className="w-14 h-14 rounded-2xl bg-slate-50 dark:bg-slate-800 flex items-center justify-center font-black text-xl text-primary dark:text-white border border-slate-100 dark:border-slate-700 uppercase group-hover:scale-110 transition-transform">
+                      {member.professionalId?.name?.charAt(0) || 'P'}
+                   </div>
+                   <div className="flex-1 min-w-0">
+                      <h4 className="font-black text-primary dark:text-white truncate">{member.professionalId?.name || 'Professional'}</h4>
+                      <p className="text-[10px] font-black text-accent uppercase tracking-widest">{member.jobRole || member.professionalId?.jobRole || 'Professional'}</p>
+                      <div className="flex items-center gap-3 mt-1">
+                         <div className="flex items-center gap-1">
+                            <span className={`w-2 h-2 rounded-full ${['Active', 'ResignationPending', 'ResignationAccepted'].includes(member.status) ? 'bg-green-500 animate-pulse' : 'bg-slate-400'}`} />
+                            <span className="text-[10px] font-bold text-slate-400 uppercase">{member.status}</span>
+                         </div>
+                         {member.workLocation && (
+                           <span className="text-[10px] font-bold text-slate-400 truncate">• {member.workLocation}</span>
+                         )}
+                      </div>
+                   </div>
+                   <button
+                      onClick={() => setReviewProfessional(member.professionalId)}
+                      className="w-10 h-10 rounded-xl bg-orange-50 dark:bg-orange-900/20 text-orange-500 flex items-center justify-center hover:bg-orange-100 hover:scale-110 transition-all shrink-0"
+                      title="Leave a Review"
+                   >
+                      <IconStar size={20} />
+                   </button>
                  </div>
-                 <div className="flex-1 min-w-0">
-                    <h4 className="font-black text-primary dark:text-white truncate">{member.professionalId?.name || 'Professional'}</h4>
-                    <p className="text-[10px] font-black text-accent uppercase tracking-widest">{member.jobRole || member.professionalId?.jobRole || 'Professional'}</p>
-                    <div className="flex items-center gap-3 mt-1">
-                       <div className="flex items-center gap-1">
-                          <span className={`w-2 h-2 rounded-full ${member.status === 'Active' ? 'bg-green-500 animate-pulse' : 'bg-slate-400'}`} />
-                          <span className="text-[10px] font-bold text-slate-400 uppercase">{member.status}</span>
-                       </div>
-                       {member.workLocation && (
-                         <span className="text-[10px] font-bold text-slate-400 truncate">• {member.workLocation}</span>
-                       )}
-                    </div>
-                 </div>
-                 <button
-                    onClick={() => setReviewProfessional(member.professionalId)}
-                    className="w-10 h-10 rounded-xl bg-orange-50 dark:bg-orange-900/20 text-orange-500 flex items-center justify-center hover:bg-orange-100 hover:scale-110 transition-all shrink-0"
-                    title="Leave a Review"
-                 >
-                    <IconStar size={20} />
-                 </button>
+
+                 {member.status === 'ResignationPending' && (
+                   <div className="bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-800 rounded-2xl p-4 mt-2">
+                     <p className="text-sm font-bold text-red-600 mb-1">Resignation Request Received</p>
+                     <p className="text-xs text-red-500 mb-4">Reason: {member.resignationReason}</p>
+                     <div className="flex gap-2">
+                       <button 
+                         onClick={async () => {
+                           try {
+                             await api.put(`/api/contractor/resignation/${member._id}/accept`);
+                             setTeam(team.map(m => m._id === member._id ? { ...m, status: 'ResignationAccepted', lastWorkingDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) } : m));
+                           } catch (err) { console.error(err); }
+                         }}
+                         className="px-4 py-2 bg-red-600 text-white rounded-xl text-xs font-black transition-all hover:bg-red-700"
+                       >
+                         Accept Resignation
+                       </button>
+                       <button 
+                         onClick={async () => {
+                           try {
+                             await api.post(`/api/contractor/resignation/${member._id}/request-stay`);
+                             alert('Request sent to professional.');
+                           } catch (err) { console.error(err); }
+                         }}
+                         className="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-xl text-xs font-black transition-all hover:bg-slate-200"
+                       >
+                         Request to Stay
+                       </button>
+                     </div>
+                   </div>
+                 )}
+
+                 {member.status === 'ResignationAccepted' && (
+                   <div className="bg-yellow-50 dark:bg-yellow-900/10 border border-yellow-200 dark:border-yellow-800 rounded-2xl p-4 mt-2">
+                     <p className="text-xs font-bold text-yellow-600">
+                       Resignation Accepted. Notice period ends on {new Date(member.lastWorkingDate).toLocaleDateString()}.
+                     </p>
+                   </div>
+                 )}
               </div>
             )) : (
               <div className="col-span-full py-12 text-center bg-slate-50 dark:bg-slate-900/40 rounded-[32px] border-2 border-dashed border-slate-200 dark:border-slate-800">

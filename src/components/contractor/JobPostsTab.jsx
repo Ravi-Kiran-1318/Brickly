@@ -9,6 +9,22 @@ import {
 } from '@tabler/icons-react';
 import ApplicantProfileModal from './ApplicantProfileModal';
 
+const ROLE_HIERARCHY = {
+  'Plumber': ['Plumbing Helper', 'Junior Plumber', 'Plumber', 'Senior Plumber', 'Plumbing Supervisor', 'Plumbing Foreman'],
+  'Electrician': ['Electrical Helper', 'Junior Electrician', 'Electrician', 'Senior Electrician', 'Electrical Supervisor', 'Electrical Foreman'],
+  'Mason': ['Mason Helper', 'Junior Mason', 'Mason', 'Senior Mason', 'Masonry Supervisor', 'Masonry Foreman'],
+  'Carpenter': ['Carpentry Helper', 'Junior Carpenter', 'Carpenter', 'Senior Carpenter', 'Carpentry Supervisor', 'Carpentry Foreman'],
+  'Welder': ['Welding Helper', 'Junior Welder', 'Welder', 'Senior Welder', 'Welding Supervisor', 'Welding Foreman'],
+  'Painter': ['Painting Helper', 'Junior Painter', 'Painter', 'Senior Painter', 'Painting Supervisor', 'Painting Foreman'],
+  'Tiler': ['Tiling Helper', 'Junior Tiler', 'Tiler', 'Senior Tiler', 'Tiling Supervisor', 'Tiling Foreman'],
+  'Roofer': ['Roofing Helper', 'Junior Roofer', 'Roofer', 'Senior Roofer', 'Roofing Supervisor', 'Roofing Foreman'],
+  'AC Technician': ['AC Helper', 'Junior AC Technician', 'AC Technician', 'Senior AC Technician', 'HVAC Supervisor', 'HVAC Foreman'],
+  'Civil Engineer': ['Junior Civil Engineer', 'Civil Engineer', 'Senior Civil Engineer', 'Civil Engineering Lead', 'Civil Engineering Manager'],
+  'Architect': ['Junior Architect', 'Architect', 'Senior Architect', 'Principal Architect', 'Lead Architect'],
+  'Interior Designer': ['Junior Interior Designer', 'Interior Designer', 'Senior Interior Designer', 'Lead Interior Designer', 'Principal Interior Designer'],
+  'Foreman': ['Assistant Foreman', 'Foreman', 'Senior Foreman', 'General Foreman', 'Site Supervisor']
+};
+
 const JobPostsTab = () => {
   const [jobs, setJobs] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -142,7 +158,20 @@ const JobPostsTab = () => {
           >
             <div className="space-y-2">
               <label className="text-sm font-bold text-slate-500 uppercase tracking-tighter">Job Role</label>
-              <input required name="jobRole" value={formData.jobRole} onChange={(e) => setFormData({...formData, jobRole: e.target.value})} placeholder="e.g. Lead Mason" className="w-full p-4 rounded-2xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 font-bold text-primary dark:text-white outline-none focus:ring-4 focus:ring-accent/10 transition-all" />
+              <select 
+                required name="jobRole" value={formData.jobRole} 
+                onChange={(e) => setFormData({...formData, jobRole: e.target.value})} 
+                className="w-full p-4 rounded-2xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 font-bold text-primary dark:text-white outline-none focus:ring-4 focus:ring-accent/10 transition-all"
+              >
+                <option value="">Select a Role</option>
+                {Object.entries(ROLE_HIERARCHY).map(([trade, roles]) => (
+                  <optgroup key={trade} label={trade}>
+                    {roles.map(role => (
+                      <option key={role} value={role}>{role}</option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
             </div>
             <div className="space-y-2">
               <label className="text-sm font-bold text-slate-500 uppercase tracking-tighter">Work Location</label>

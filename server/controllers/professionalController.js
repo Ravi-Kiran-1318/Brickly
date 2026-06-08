@@ -7,6 +7,7 @@ const { sendMail } = require('../utils/mailer');
 const { getIO } = require('../socket');
 const { ROLE_HIERARCHY, getTradeForRole } = require('../utils/roleHierarchy');
 const HiredWorker = require('../models/HiredWorker');
+const DirectHireRequest = require('../models/DirectHireRequest');
 
 
 
@@ -308,8 +309,8 @@ exports.toggleVisibility = async (req, res) => {
 exports.getMyApplications = async (req, res) => {
   try {
     const apps = await Application.find({ professionalId: req.user.id })
-      .populate('jobPostId')
-      .populate('contractorId', 'name companyName')
+      .populate('jobPostId', 'jobRole workLocation salary salaryType duration facilities contractorId workSiteLocation isFilled')
+      .populate('contractorId', 'name companyName email phone')
       .sort({ appliedAt: -1 });
     res.json(apps);
   } catch (error) {
@@ -388,46 +389,284 @@ exports.getAllAvailability = async (req, res) => {
   }
 };
 
-exports.hireDirectly = async (req, res) => {
+exports.directHireRequest = async (req, res) => {
   try {
-    const { availabilityPostId } = req.params;
-    const post = await AvailabilityPost.findById(availabilityPostId).populate('professionalId');
-    if (!post) return res.status(404).json({ message: 'Availability post not found' });
-
+    const professionalId = req.params.professionalId;
+    const { jobRole, workSiteLocation, salary, duration } = req.body;
+    
     const contractor = await User.findById(req.user.id);
-    const professional = post.professionalId;
+    const professional = await User.findById(professionalId);
+    
+    if (!professional) return res.status(404).json({ message: 'Professional not found' });
+
+    // Create DirectHireRequest
+    const request = new DirectHireRequest({
+      contractorId: req.user.id,
+      professionalId,
+      jobRole,
+      workSiteLocation,
+      salary,
+      duration
+    });
+    await request.save();
 
     // Notify Professional
     const notification = new Notification({
       userId: professional._id,
-      title: 'Direct Hire Request!',
-      message: `${contractor.companyName || contractor.name} wants to hire you directly for "${post.jobRole}".`,
-      type: 'General',
-      actionTab: 'My Availability'
+      title: 'Direct Hire Request',
+      message: `${contractor.companyName || contractor.name} wants to hire you directly for the ${jobRole} role.`,
+      type: 'Job',
+      actionTab: 'my-availability'
     });
     await notification.save();
 
-    const io = req.app.get('io');
+    const io = req.app.get('io') || getIO();
     if (io) {
-      io.to(`user:${professional._id}`).emit('professional:hiredDirectly', {
-        notification,
-        contractorName: contractor.companyName || contractor.name
-      });
+      io.to(`user:${professional._id}`).emit('notification', { notification });
     }
 
     // Email
     await sendMail({
       to: professional.email,
-      subject: 'Direct Hire Request from Brickly',
+      subject: 'Direct Hire Request on BuildR',
       html: `
         <h2>Congratulations!</h2>
         <p>You have a direct hire request from <strong>${contractor.companyName || contractor.name}</strong>.</p>
-        <p><strong>Role:</strong> ${post.jobRole}</p>
-        <p>Log in to Brickly to contact them.</p>
+        <p><strong>Role:</strong> ${jobRole}</p>
+        ${workSiteLocation ? `<p><strong>Location:</strong> ${workSiteLocation}</p>` : ''}
+        ${salary ? `<p><strong>Salary:</strong> ${salary}</p>` : ''}
+        ${duration ? `<p><strong>Duration:</strong> ${duration}</p>` : ''}
+        <br/>
+        <p>Log in to BuildR to accept or reject this request.</p>
       `
     });
 
-    res.json({ message: 'Hire request sent to professional' });
+    res.json({ message: 'Hire request sent to professional', request });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+exports.getDirectHireRequests = async (req, res) => {
+  try {
+    const requests = await DirectHireRequest.find({ professionalId: req.user.id })
+      .populate('contractorId', 'name companyName email phone workSiteLocation address')
+      .sort({ createdAt: -1 });
+    res.json(requests);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+exports.joinDirectHire = async (req, res) => {
+  try {
+    const requestId = req.params.id;
+    const professionalId = req.user.id;
+
+    const request = await DirectHireRequest.findOne({ _id: requestId, professionalId });
+    if (!request) return res.status(404).json({ message: 'Request not found' });
+    if (request.status !== 'Pending') return res.status(400).json({ message: `Request is already ${request.status}` });
+
+    // Check max 2 joined
+    const activeHires = await HiredWorker.countDocuments({ professionalId, status: 'Active' });
+    if (activeHires >= 2) return res.status(400).json({ message: 'You are already joined in 2 active positions.' });
+
+    request.status = 'Joined';
+    await request.save();
+
+    const hiredWorker = new HiredWorker({
+      contractorId: request.contractorId,
+      professionalId,
+      directHireRequestId: request._id,
+      jobRole: request.jobRole,
+      salary: request.salary ? parseFloat(request.salary.replace(/[^0-9.]/g, '')) : null,
+      workLocation: request.workSiteLocation,
+      status: 'Active'
+    });
+    await hiredWorker.save();
+
+    const profUser = await User.findById(professionalId);
+    
+    // Auto-withdraw other pending requests (Applications & DirectHireRequests)
+    await Application.updateMany(
+      { professionalId, status: { $in: ['Applied', 'Viewed', 'Shortlisted', 'Hired'] } },
+      { status: 'Withdrawn' }
+    );
+    await DirectHireRequest.updateMany(
+      { professionalId, _id: { $ne: requestId }, status: 'Pending' },
+      { status: 'Withdrawn' }
+    );
+
+    // Remove availability post
+    await AvailabilityPost.deleteMany({ professionalId });
+
+    // Notify Contractor
+    const notification = new Notification({
+      userId: request.contractorId,
+      title: 'Professional Has Joined',
+      message: `${profUser.name} has accepted your direct hire request and joined as the ${request.jobRole}.`,
+      type: 'Job',
+      actionTab: 'overview' // Used to be browse-professionals, but overview has the team list
+    });
+    await notification.save();
+
+    const io = getIO();
+    io.to(`user:${request.contractorId}`).emit('notification', { notification });
+
+    await sendMail({
+      to: (await User.findById(request.contractorId)).email,
+      subject: 'Professional Joined',
+      html: `<p><strong>${profUser.name}</strong> has joined as <strong>${request.jobRole}</strong>.</p>`
+    });
+
+    res.json({ message: 'Successfully joined position', request });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+exports.rejectDirectHire = async (req, res) => {
+  try {
+    const requestId = req.params.id;
+    const { rejectionReason } = req.body;
+    const professionalId = req.user.id;
+
+    const request = await DirectHireRequest.findOne({ _id: requestId, professionalId });
+    if (!request) return res.status(404).json({ message: 'Request not found' });
+
+    request.status = 'Rejected';
+    request.rejectionReason = rejectionReason;
+    await request.save();
+
+    const profUser = await User.findById(professionalId);
+    
+    const notification = new Notification({
+      userId: request.contractorId,
+      title: 'Direct Hire Request Declined',
+      message: `${profUser.name} has declined your hire request for the ${request.jobRole} role. Reason: ${rejectionReason}`,
+      type: 'Job',
+      actionTab: 'browse-professionals'
+    });
+    await notification.save();
+
+    const io = getIO();
+    io.to(`user:${request.contractorId}`).emit('notification', { notification });
+
+    await sendMail({
+      to: (await User.findById(request.contractorId)).email,
+      subject: 'Direct Hire Request Declined',
+      html: `<p><strong>${profUser.name}</strong> has declined your hire request for the <strong>${request.jobRole}</strong> role.</p><p><strong>Reason:</strong> ${rejectionReason}</p>`
+    });
+
+    res.json({ message: 'Request rejected', request });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+exports.rejectApplication = async (req, res) => {
+  try {
+    const applicationId = req.params.id;
+    const { rejectionReason } = req.body;
+    const professionalId = req.user.id;
+
+    const application = await Application.findOne({ _id: applicationId, professionalId }).populate('jobPostId');
+    if (!application) return res.status(404).json({ message: 'Application not found' });
+
+    application.status = 'Rejected';
+    // Mongoose application schema might not have rejectionReason yet. We should add it or just save to DB dynamically.
+    // For now we will assume the schema allows it, or we just notify. Wait, let's update application schema if needed later.
+    application.set('rejectionReason', rejectionReason, { strict: false });
+    await application.save();
+
+    // Update job post applicant status
+    if (application.jobPostId) {
+      const job = await JobPost.findById(application.jobPostId._id);
+      if (job) {
+        const applicantEntry = job.applicants.find(a => a.professionalId?.toString() === professionalId);
+        if (applicantEntry) {
+          applicantEntry.status = 'Rejected';
+          await job.save();
+        }
+      }
+    }
+
+    const profUser = await User.findById(professionalId);
+    
+    const notification = new Notification({
+      userId: application.contractorId,
+      title: 'Application Rejected',
+      message: `${profUser.name} has rejected your hire offer for the ${application.jobPostId.jobRole}. Reason: ${rejectionReason}`,
+      type: 'Job',
+      actionTab: 'job-posts'
+    });
+    await notification.save();
+
+    const io = getIO();
+    io.to(`user:${application.contractorId}`).emit('notification', { notification });
+
+    await sendMail({
+      to: (await User.findById(application.contractorId)).email,
+      subject: 'Application Rejected',
+      html: `<p><strong>${profUser.name}</strong> has rejected your offer for the <strong>${application.jobPostId.jobRole}</strong> role.</p><p><strong>Reason:</strong> ${rejectionReason}</p>`
+    });
+
+    res.json({ message: 'Application rejected', application });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+exports.submitResignation = async (req, res) => {
+  try {
+    const { applicationId, directHireRequestId, resignationReason, additionalComments, lastWorkingDate } = req.body;
+    const professionalId = req.user.id;
+
+    let query = { professionalId, status: 'Active' };
+    if (applicationId) query.applicationId = applicationId;
+    else if (directHireRequestId) query.directHireRequestId = directHireRequestId;
+    else return res.status(400).json({ message: 'Missing join reference ID' });
+
+    const hiredWorker = await HiredWorker.findOne(query);
+    if (!hiredWorker) return res.status(404).json({ message: 'Active position not found' });
+
+    hiredWorker.status = 'ResignationPending';
+    hiredWorker.resignationReason = resignationReason;
+    hiredWorker.additionalComments = additionalComments;
+    hiredWorker.resignationSubmittedDate = new Date();
+    // Use the backend calculation for security: today + 7 days
+    const lwd = new Date();
+    lwd.setDate(lwd.getDate() + 7);
+    hiredWorker.lastWorkingDate = lwd;
+
+    await hiredWorker.save();
+
+    const profUser = await User.findById(professionalId);
+    
+    const notification = new Notification({
+      userId: hiredWorker.contractorId,
+      title: 'Resignation Notice Received',
+      message: `${profUser.name} has submitted a resignation from the ${hiredWorker.jobRole} role. Last working date: ${lwd.toLocaleDateString()}`,
+      type: 'Job',
+      actionTab: 'overview'
+    });
+    await notification.save();
+
+    const io = getIO();
+    io.to(`user:${hiredWorker.contractorId}`).emit('notification', { notification });
+
+    await sendMail({
+      to: (await User.findById(hiredWorker.contractorId)).email,
+      subject: 'Resignation Notice Received',
+      html: `
+        <p><strong>${profUser.name}</strong> has submitted a resignation from the <strong>${hiredWorker.jobRole}</strong> role.</p>
+        <p><strong>Reason:</strong> ${resignationReason}</p>
+        <p><strong>Comments:</strong> ${additionalComments}</p>
+        <p><strong>Last Working Date:</strong> ${lwd.toLocaleDateString()}</p>
+      `
+    });
+
+    res.json({ message: 'Resignation submitted successfully', hiredWorker });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

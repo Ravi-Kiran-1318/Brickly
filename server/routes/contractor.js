@@ -25,9 +25,13 @@ router.get('/jobs/:id/applicants', jobController.getApplicants);
 router.put('/jobs/:id/applicants/:applicationId/status', jobController.updateApplicantStatus);
 router.post('/jobs/:id/hire/:professionalId', jobController.hireProfessional);
 
-// Availability Post Routes
+// Availability Post & Direct Hire Routes
 router.get('/professionals', professionalController.getAllAvailability);
-router.post('/professionals/hire/:availabilityPostId', professionalController.hireDirectly);
+router.post('/direct-hire/:professionalId', professionalController.directHireRequest);
+
+// Resignation Routes
+router.put('/resignation/:hiredWorkerId/accept', contractorController.acceptResignation);
+router.put('/resignation/:hiredWorkerId/request-stay', contractorController.requestStay);
 
 // Portfolio Routes
 router.post('/portfolio', (req, res, next) => { req.uploadFolder = 'portfolio'; next(); }, upload.array('images', 5), portfolioController.createPortfolio);

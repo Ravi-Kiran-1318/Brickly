@@ -41,6 +41,15 @@ router.put('/availability/toggle', professionalController.toggleVisibility);
 // Applications
 router.get('/applications', professionalController.getMyApplications);
 router.post('/applications/:id/join', professionalController.joinJob);
+router.put('/applications/:id/reject', professionalController.rejectApplication);
+
+// Direct Hire Requests
+router.get('/direct-hire-requests', professionalController.getDirectHireRequests);
+router.put('/direct-hire-requests/:id/join', professionalController.joinDirectHire);
+router.put('/direct-hire-requests/:id/reject', professionalController.rejectDirectHire);
+
+// Resignation
+router.post('/resign', professionalController.submitResignation);
 
 // Reviews
 const profReviewController = require('../controllers/professionalReviewController');

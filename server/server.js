@@ -37,7 +37,7 @@ app.use(cors({
     const isAllowed = allowedOrigins.includes(origin) || origin.startsWith('http://localhost:');
     
     if (isAllowed) {
-      cb(null, true);
+      cb(null, origin); // Reflect the actual request origin explicitly
     } else {
       console.warn(`[CORS] Blocked request from: ${origin}`);
       cb(new Error(`CORS blocked: ${origin}`));
@@ -46,6 +46,7 @@ app.use(cors({
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Cache-Control', 'Pragma'],
+  maxAge: 0 // Disable preflight caching to prevent stale CORS headers across sessions
 }));
 
 app.use(express.json({ limit: '50mb' }));

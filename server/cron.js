@@ -1,5 +1,6 @@
 const cron = require('node-cron');
 const User = require('./models/User');
+const NOTIFICATION_TABS = require('../shared/notificationConstants');
 // const { sendMail } = require('./utils/mailer'); // Assuming mailer exists
 
 const initCronJobs = () => {
@@ -71,6 +72,87 @@ const initCronJobs = () => {
       console.log('[CRON] Daily Job Alert Digest process completed.');
     } catch (error) {
       console.error('[CRON Error]', error);
+    }
+  });
+
+  // Run every day at midnight (00:00) to check notice periods
+  cron.schedule('0 0 * * *', async () => {
+    console.log('[CRON] Starting Resignation Notice Period Check...');
+    try {
+      const HiredWorker = require('./models/HiredWorker');
+      const Application = require('./models/Application');
+      const DirectHireRequest = require('./models/DirectHireRequest');
+      const Notification = require('./models/Notification');
+      const { sendMail } = require('./utils/mailer');
+      const { getIO } = require('./socket');
+
+      const today = new Date();
+      // Find all ResignationAccepted where lastWorkingDate is today or earlier
+      const endingWorkers = await HiredWorker.find({
+        status: 'ResignationAccepted',
+        lastWorkingDate: { $lte: today }
+      });
+
+      for (const worker of endingWorkers) {
+        // Update HiredWorker
+        worker.status = 'Resigned';
+        await worker.save();
+
+        // Update Application or DirectHireRequest
+        if (worker.applicationId) {
+          await Application.findByIdAndUpdate(worker.applicationId, { status: 'Resigned' });
+        } else if (worker.directHireRequestId) {
+          await DirectHireRequest.findByIdAndUpdate(worker.directHireRequestId, { status: 'Resigned' });
+        }
+
+        const profUser = await User.findById(worker.professionalId);
+        const contractorUser = await User.findById(worker.contractorId);
+
+        // Notify Contractor
+        const contractorNotif = new Notification({
+          userId: worker.contractorId,
+          title: 'Team Member Has Left',
+          message: `${profUser.name}'s last working day has passed. They have been removed from your active team.`,
+          type: 'General',
+          actionTab: NOTIFICATION_TABS.CONTRACTOR_OVERVIEW
+        });
+        await contractorNotif.save();
+
+        // Notify Professional
+        const profNotif = new Notification({
+          userId: worker.professionalId,
+          title: 'Resignation Complete',
+          message: `Your resignation is complete. You are now available for new opportunities. Post your availability to find new jobs.`,
+          type: 'General',
+          actionTab: NOTIFICATION_TABS.PROFESSIONAL_MY_AVAILABILITY
+        });
+        await profNotif.save();
+
+        const io = getIO();
+        io.to(`user:${worker.contractorId}`).emit('notification', { notification: contractorNotif });
+        io.to(`user:${worker.professionalId}`).emit('notification', { notification: profNotif });
+
+        // Emails
+        if (contractorUser.email) {
+          await sendMail({
+            to: contractorUser.email,
+            subject: 'Team Member Notice Period Completed',
+            html: `<p><strong>${profUser.name}</strong>'s notice period is complete and they have been removed from your active team.</p>`
+          });
+        }
+        if (profUser.email) {
+          await sendMail({
+            to: profUser.email,
+            subject: 'Resignation Complete',
+            html: `<p>Your resignation from <strong>${contractorUser.companyName || contractorUser.name}</strong> is complete.</p>
+                   <p>You are now available for new opportunities. Log in to BuildR and post your availability!</p>`
+          });
+        }
+      }
+
+      console.log(`[CRON] Processed ${endingWorkers.length} completed resignations.`);
+    } catch (error) {
+      console.error('[CRON Resignation Error]', error);
     }
   });
 };

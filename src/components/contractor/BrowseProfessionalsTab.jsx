@@ -45,14 +45,20 @@ const BrowseProfessionalsTab = () => {
     }
   };
 
-  const handleHire = async (postId) => {
-    if (!window.confirm("Hire this professional directly?")) return;
+  const handleHire = async (post) => {
+    if (!post?.professionalId?._id) return toast.error("Professional details not found");
+    if (!window.confirm(`Send direct hire request to ${post.professionalId?.name}?`)) return;
     try {
-      await api.post(`/api/contractor/professionals/hire/${postId}`);
-      toast.success("Professional hired!");
+      await api.post(`/api/contractor/direct-hire/${post.professionalId._id}`, {
+        jobRole: post.jobRole,
+        workSiteLocation: post.locationPreference,
+        salary: post.expectedSalary,
+        duration: 'Long term'
+      });
+      toast.success("Direct hire request sent!");
       fetchProfessionals();
     } catch (err) {
-      toast.error("Hiring failed");
+      toast.error(err.response?.data?.message || "Hiring failed");
     }
   };
 
@@ -133,7 +139,7 @@ const BrowseProfessionalsTab = () => {
                 <IconDownload size={16} /> Resume
               </button>
               <button 
-                onClick={() => handleHire(post._id)}
+                onClick={() => handleHire(post)}
                 className="flex-[2] py-3 px-2 rounded-xl text-xs font-black bg-accent text-white flex items-center justify-center gap-1.5 shadow-lg shadow-orange-500/10 hover:bg-orange-600 transition-all"
               >
                 Hire Now

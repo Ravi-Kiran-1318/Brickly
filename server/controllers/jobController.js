@@ -1,6 +1,7 @@
 const User = require('../models/User');
 const JobPost = require('../models/JobPost');
 const AvailabilityPost = require('../models/AvailabilityPost');
+const Application = require('../models/Application');
 const Notification = require('../models/Notification');
 const { getIO } = require('../socket');
 const { ROLE_HIERARCHY, getTradeForRole } = require('../utils/roleHierarchy');
@@ -130,40 +131,89 @@ exports.updateApplicantStatus = async (req, res) => {
 };
 
 exports.hireProfessional = async (req, res) => {
-  const { id, professionalId } = req.params;
-
-  const job = await JobPost.findOne({ _id: id, contractorId: req.user.id });
-  if (!job) return res.status(404).json({ message: 'Job not found' });
-
-  // 1. Update job status
-  job.isFilled = true;
-  await job.save();
-
-  // 2. Update professional's hired status and link to contractor
-  await User.findByIdAndUpdate(professionalId, { hiredBy: req.user.id });
-  await AvailabilityPost.deleteOne({ professionalId });
-
-  // 3. Create Notification
-  const notification = new Notification({
-    userId: professionalId,
-    type: 'Hire',
-    title: 'You are Hired!',
-    message: `A contractor has hired you for the role of ${job.jobRole}.`,
-    relatedId: job._id,
-    actionTab: 'My Availability'
-  });
-  await notification.save();
-
-  // 4. Socket event
   try {
-    getIO().to(`user:${professionalId}`).emit('professional:hired', {
-      jobRole: job.jobRole,
-      title: 'You are Hired!'
+    const { id, professionalId } = req.params;
+
+    const job = await JobPost.findOne({ _id: id, contractorId: req.user.id });
+    if (!job) return res.status(404).json({ message: 'Job not found' });
+
+    // 1. Update application status to Hired
+    const application = await Application.findOne({ jobPostId: job._id, professionalId });
+    if (application) {
+      console.log('Application before update:', application.status);
+      application.status = 'Hired';
+      await application.save();
+      console.log('Application after update:', application.status);
+    } else {
+      console.log('WARNING: No application found for jobPostId:', job._id, 'professionalId:', professionalId);
+    }
+
+    // 2. Also update the applicant status inside the JobPost's embedded applicants array
+    const applicantEntry = job.applicants.find(a => a.professionalId?.toString() === professionalId);
+    if (applicantEntry) {
+      applicantEntry.status = 'Hired';
+      await job.save();
+    }
+
+    // 3. Update professional's hired status and clean up availability
+    await User.findByIdAndUpdate(professionalId, { hiredBy: req.user.id });
+    await AvailabilityPost.deleteOne({ professionalId });
+
+    // 4. Create Notification
+    const contractor = await User.findById(req.user.id);
+    const notification = new Notification({
+      userId: professionalId,
+      type: 'Job',
+      title: 'You Have Been Hired',
+      message: `${contractor.companyName || contractor.name} has hired you for the ${job.jobRole} position.`,
+      relatedId: job._id,
+      actionTab: 'Applications'
     });
-  } catch (err) { console.error('Socket error:', err); }
+    await notification.save();
 
-  // 5. Send Email (Placeholder check if mailer exists)
-  // await sendEmail(...)
+    // 5. Socket events — real-time update
+    try {
+      const io = getIO();
+      io.to(`user:${professionalId}`).emit('notification', { notification });
 
-  res.json({ message: 'Professional hired successfully' });
+      if (application) {
+        io.to(`user:${professionalId}`).emit('applicationStatusUpdate', {
+          applicationId: application._id,
+          newStatus: 'Hired',
+          jobPostId: job._id
+        });
+      }
+
+      io.to(`user:${professionalId}`).emit('professional:hired', {
+        jobRole: job.jobRole,
+        title: 'You Have Been Hired'
+      });
+    } catch (socketErr) { console.error('Socket error:', socketErr); }
+
+    // 6. Send Email
+    try {
+      const { sendMail } = require('../utils/mailer');
+      const profUser = await User.findById(professionalId);
+      if (profUser && profUser.email) {
+        await sendMail({
+          to: profUser.email,
+          subject: 'You Have Been Hired on BuildR',
+          html: `
+            <h2>Congratulations!</h2>
+            <p><strong>${contractor.companyName || contractor.name}</strong> has hired you.</p>
+            <p><strong>Role:</strong> ${job.jobRole}</p>
+            <p><strong>Location:</strong> ${job.workLocation}</p>
+            <p><strong>Salary:</strong> ₹${job.salary}</p>
+            <br>
+            <p>Please log in to BuildR and go to your Applications tab to confirm your joining.</p>
+          `
+        });
+      }
+    } catch (emailErr) { console.error('Email send error:', emailErr); }
+
+    res.json({ message: 'Professional hired successfully', application });
+  } catch (error) {
+    console.error('hireProfessional error:', error);
+    res.status(500).json({ message: error.message });
+  }
 };
