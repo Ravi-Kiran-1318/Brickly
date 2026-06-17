@@ -13,6 +13,7 @@ import {
 } from '@tabler/icons-react';
 import { useTheme } from '../context/ThemeContext';
 import ThemeToggle from '../components/ThemeToggle';
+import NOTIFICATION_TABS from '../../shared/notificationConstants.json';
 
 // Import Tabs (will create these next)
 import OverviewTab from '../components/contractor/OverviewTab';
@@ -30,7 +31,7 @@ import ContractsTab from '../components/contractor/ContractsTab';
 const ContractorDashboard = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState('Overview');
+  const [activeTab, setActiveTab] = useState(NOTIFICATION_TABS.CONTRACTOR_OVERVIEW);
   const [tabData, setTabData] = useState(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -106,31 +107,31 @@ const ContractorDashboard = () => {
   };
 
   const navItems = [
-    { label: 'Overview', icon: IconLayoutDashboard },
-    { label: 'Job Posts', icon: IconBriefcase },
-    { label: 'Browse Professionals', icon: IconUsers },
-    { label: 'Portfolio', icon: IconPhoto },
-    { label: 'Reviews', icon: IconStar },
-    { label: 'Find Materials', icon: IconPackage },
-    { label: 'My Quotes', icon: IconFileInvoice },
-    { label: 'Orders', icon: IconTruck },
-    { label: 'Deals Feed', icon: IconTag },
-    { label: 'Project Progress', icon: IconHammer },
+    { id: NOTIFICATION_TABS.CONTRACTOR_OVERVIEW, label: 'Overview', icon: IconLayoutDashboard },
+    { id: NOTIFICATION_TABS.CONTRACTOR_JOB_POSTS, label: 'Job Posts', icon: IconBriefcase },
+    { id: NOTIFICATION_TABS.CONTRACTOR_BROWSE_PROFESSIONALS, label: 'Browse Professionals', icon: IconUsers },
+    { id: NOTIFICATION_TABS.CONTRACTOR_PORTFOLIO, label: 'Portfolio', icon: IconPhoto },
+    { id: NOTIFICATION_TABS.CONTRACTOR_REVIEWS, label: 'Reviews', icon: IconStar },
+    { id: NOTIFICATION_TABS.CONTRACTOR_FIND_MATERIALS, label: 'Find Materials', icon: IconPackage },
+    { id: NOTIFICATION_TABS.CONTRACTOR_MY_QUOTES, label: 'My Quotes', icon: IconFileInvoice },
+    { id: NOTIFICATION_TABS.CONTRACTOR_ORDERS, label: 'Orders', icon: IconTruck },
+    { id: NOTIFICATION_TABS.CONTRACTOR_DEALS_FEED, label: 'Deals Feed', icon: IconTag },
+    { id: 'project-progress', label: 'Project Progress', icon: IconHammer },
   ];
 
   const renderActiveTab = () => {
     switch (activeTab) {
-      case 'Overview': return <OverviewTab setActiveTab={changeTab} />;
-      case 'Job Posts': return <JobPostsTab />;
-      case 'Browse Professionals': return <BrowseProfessionalsTab />;
-      case 'Portfolio': return <PortfolioTab />;
-      case 'Reviews': return <ReviewsTab />;
-      case 'Find Materials': return <MaterialsTab />;
-      case 'My Quotes': return <MyQuotesTab />;
-      case 'Orders': return <OrdersTab />;
-      case 'Deals Feed': return <DealsFeedTab />;
-      case 'Project Progress': return <ContractsTab tabData={tabData} setTabData={setTabData} />;
-      case 'Notifications': return <NotificationsTab setUnreadCount={setUnreadCount} setActiveTab={changeTab} />;
+      case NOTIFICATION_TABS.CONTRACTOR_OVERVIEW: return <OverviewTab setActiveTab={changeTab} />;
+      case NOTIFICATION_TABS.CONTRACTOR_JOB_POSTS: return <JobPostsTab />;
+      case NOTIFICATION_TABS.CONTRACTOR_BROWSE_PROFESSIONALS: return <BrowseProfessionalsTab />;
+      case NOTIFICATION_TABS.CONTRACTOR_PORTFOLIO: return <PortfolioTab />;
+      case NOTIFICATION_TABS.CONTRACTOR_REVIEWS: return <ReviewsTab />;
+      case NOTIFICATION_TABS.CONTRACTOR_FIND_MATERIALS: return <MaterialsTab />;
+      case NOTIFICATION_TABS.CONTRACTOR_MY_QUOTES: return <MyQuotesTab />;
+      case NOTIFICATION_TABS.CONTRACTOR_ORDERS: return <OrdersTab />;
+      case NOTIFICATION_TABS.CONTRACTOR_DEALS_FEED: return <DealsFeedTab />;
+      case 'project-progress': return <ContractsTab tabData={tabData} setTabData={setTabData} />;
+      case NOTIFICATION_TABS.CONTRACTOR_NOTIFICATIONS: return <NotificationsTab setUnreadCount={setUnreadCount} setActiveTab={changeTab} />;
       default: return <OverviewTab setActiveTab={changeTab} />;
     }
   };
@@ -181,17 +182,17 @@ const ContractorDashboard = () => {
           {navItems.map((item) => (
             <button
               key={item.label}
-              onClick={() => setActiveTab(item.label)}
+              onClick={() => setActiveTab(item.id)}
               className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all relative group ${
-                activeTab === item.label ? 'bg-accent text-white shadow-lg shadow-orange-500/20' : 'text-white/60 hover:bg-white/5 hover:text-white'
+                activeTab === item.id ? 'bg-accent text-white shadow-lg shadow-orange-500/20' : 'text-white/60 hover:bg-white/5 hover:text-white'
               }`}
             >
-              <item.icon size={22} className={activeTab === item.label ? 'text-white' : 'group-hover:scale-110 transition-transform'} />
+              <item.icon size={22} className={activeTab === item.id ? 'text-white' : 'group-hover:scale-110 transition-transform'} />
               {isSidebarOpen && <span className="text-sm font-bold">{item.label}</span>}
-              {item.badge && activeTab !== item.label && (
+              {item.badge && activeTab !== item.id && (
                 <div className="absolute top-2 right-2 w-2 h-2 bg-orange-500 rounded-full animate-[blink_1s_ease-in-out_infinite]" />
               )}
-              {activeTab === item.label && (
+              {activeTab === item.id && (
                 <motion.div layoutId="active" className="absolute left-0 w-1 h-6 bg-white rounded-r-full" />
               )}
             </button>
@@ -210,12 +211,12 @@ const ContractorDashboard = () => {
             <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 hover:bg-white/5 rounded-lg" style={{ color: 'var(--text-secondary)' }}>
               {isSidebarOpen ? <IconX size={24} /> : <IconMenu2 size={24} />}
             </button>
-            <h1 className="text-xl font-black tracking-tight" style={{ color: 'var(--text-primary)' }}>{activeTab}</h1>
+            <h1 className="text-xl font-black tracking-tight" style={{ color: 'var(--text-primary)' }}>{navItems.find(i => i.id === activeTab)?.label || 'Notifications'}</h1>
           </div>
           
           <div className="flex items-center gap-3">
              <ThemeToggle />
-             <button onClick={() => setActiveTab('Notifications')} className="p-2 relative hover:bg-white/5 rounded-xl transition-all">
+             <button onClick={() => setActiveTab(NOTIFICATION_TABS.CONTRACTOR_NOTIFICATIONS)} className="p-2 relative hover:bg-white/5 rounded-xl transition-all">
                <IconBell size={24} className={`group-hover:scale-110 transition-transform ${unreadCount > 0 ? 'animate-[blink_1s_ease-in-out_infinite] text-accent' : ''}`} style={{ color: unreadCount > 0 ? 'var(--accent)' : 'var(--text-secondary)' }} />
                {unreadCount > 0 && <span className="absolute top-2 right-2 w-2.5 h-2.5 bg-orange-500 rounded-full border-2" style={{ borderColor: 'var(--bg-primary)' }} />}
              </button>

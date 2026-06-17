@@ -8,6 +8,7 @@ const { getIO } = require('../socket');
 const { ROLE_HIERARCHY, getTradeForRole } = require('../utils/roleHierarchy');
 const HiredWorker = require('../models/HiredWorker');
 const DirectHireRequest = require('../models/DirectHireRequest');
+const NOTIFICATION_TABS = require('../../shared/notificationConstants');
 
 
 
@@ -60,6 +61,44 @@ exports.getStats = async (req, res) => {
   }
 };
 
+exports.getWorkingStatus = async (req, res) => {
+  try {
+    const hiredWorker = await HiredWorker.findOne({
+      professionalId: req.user.id,
+      status: { $in: ['Active', 'ResignationPending', 'ResignationAccepted'] }
+    }).populate('contractorId');
+
+    if (!hiredWorker) {
+      return res.json({
+        isWorking: false,
+        isInNoticePeriod: false,
+        currentJob: null,
+        lastWorkingDate: null,
+        contractorName: null,
+        contractorId: null
+      });
+    }
+
+    const contractor = hiredWorker.contractorId;
+    const isNotice = ['ResignationPending', 'ResignationAccepted'].includes(hiredWorker.status);
+
+    res.json({
+      isWorking: true,
+      isInNoticePeriod: isNotice,
+      currentJob: {
+        jobRole: hiredWorker.jobRole,
+        joinDate: hiredWorker.joinDate
+      },
+      lastWorkingDate: isNotice ? hiredWorker.lastWorkingDate : null,
+      contractorName: contractor ? (contractor.companyName || contractor.name) : null,
+      contractorId: hiredWorker.contractorId._id || hiredWorker.contractorId
+    });
+  } catch (error) {
+    console.error('getWorkingStatus error:', error);
+    res.status(500).json({ message: error.message });
+  }
+};
+
 // --- Job Feed ---
 exports.getJobs = async (req, res) => {
   try {
@@ -71,6 +110,7 @@ exports.getJobs = async (req, res) => {
 
     const query = { 
       isFilled: false,
+      status: 'Active',
       jobRole: { $in: validRoles }
     };
 
@@ -121,19 +161,55 @@ exports.getJobs = async (req, res) => {
 
 exports.applyToJob = async (req, res) => {
   try {
+    const activeEmployment = await HiredWorker.findOne({
+      professionalId: req.user.id,
+      status: 'Active'
+    });
+
+    if (activeEmployment) {
+      return res.status(400).json({ 
+        message: 'You are currently working with a contractor. You must resign before applying to new positions.' 
+      });
+    }
+
+    const noticeEmployment = await HiredWorker.findOne({
+      professionalId: req.user.id,
+      status: { $in: ['ResignationPending', 'ResignationAccepted'] }
+    });
+
     const jobPost = await JobPost.findById(req.params.id);
     if (!jobPost) return res.status(404).json({ message: 'Job not found' });
 
     const alreadyApplied = await Application.findOne({ professionalId: req.user.id, jobPostId: jobPost._id });
     if (alreadyApplied) return res.status(400).json({ message: 'Already applied' });
 
+    const DirectHireRequest = require('../models/DirectHireRequest');
+    const alreadyDirectHired = await DirectHireRequest.findOne({ professionalId: req.user.id, jobPostId: jobPost._id, status: 'Pending' });
+    if (alreadyDirectHired) return res.status(400).json({ message: 'You have a pending direct hire request for this job post. Please respond to it instead.' });
+
     const professional = await User.findById(req.user.id);
 
+    const jobPostPopulated = await JobPost.findById(req.params.id).populate('contractorId', 'name companyName phone email');
     const application = new Application({
       jobPostId: jobPost._id,
       professionalId: req.user.id,
       contractorId: jobPost.contractorId,
-      status: 'Applied'
+      status: 'Applied',
+      jobSnapshot: {
+        title: jobPost.jobRole,
+        workLocation: jobPost.workLocation,
+        salary: jobPost.salary,
+        salaryType: jobPost.salaryType,
+        duration: jobPost.duration,
+        facilities: jobPost.facilities,
+      },
+      contractorSnapshot: {
+        contractorId: jobPostPopulated.contractorId._id,
+        name: jobPostPopulated.contractorId.name,
+        companyName: jobPostPopulated.contractorId.companyName,
+        phone: jobPostPopulated.contractorId.phone,
+        email: jobPostPopulated.contractorId.email,
+      }
     });
     await application.save();
 
@@ -150,7 +226,7 @@ exports.applyToJob = async (req, res) => {
       title: 'New Job Application',
       message: `${professional.name} applied for "${jobPost.jobRole}" position.`,
       type: 'General',
-      actionTab: 'Job Posts'
+      actionTab: NOTIFICATION_TABS.CONTRACTOR_JOB_POSTS
     });
     await notification.save();
 
@@ -236,7 +312,7 @@ exports.createAvailability = async (req, res) => {
         title: 'New Professional Available!',
         message: `${professional.name} is now available as a ${populatedPost.jobRole || professional.jobRole || 'Professional'}!`,
         relatedId: populatedPost._id,
-        actionTab: 'Browse Professionals'
+        actionTab: NOTIFICATION_TABS.CONTRACTOR_BROWSE_PROFESSIONALS
       });
       await notification.save();
 
@@ -285,6 +361,18 @@ exports.updateAvailability = async (req, res) => {
   }
 };
 
+exports.getMyAvailabilityPosts = async (req, res) => {
+  try {
+    const posts = await AvailabilityPost.find({
+      professionalId: req.user.id
+    }).sort({ createdAt: -1 });
+
+    res.json({ success: true, data: posts });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 exports.deleteAvailability = async (req, res) => {
   try {
     await AvailabilityPost.findOneAndDelete({ professionalId: req.user.id });
@@ -308,11 +396,47 @@ exports.toggleVisibility = async (req, res) => {
 // --- Applications ---
 exports.getMyApplications = async (req, res) => {
   try {
-    const apps = await Application.find({ professionalId: req.user.id })
-      .populate('jobPostId', 'jobRole workLocation salary salaryType duration facilities contractorId workSiteLocation isFilled')
-      .populate('contractorId', 'name companyName email phone')
+    const applications = await Application.find({ professionalId: req.user.id })
+      .populate({
+        path: 'jobPostId',
+        select: 'jobRole workLocation salary salaryType duration facilities workSiteLocation isFilled',
+        populate: {
+          path: 'contractorId',
+          select: 'name companyName email phone'
+        }
+      })
       .sort({ appliedAt: -1 });
-    res.json(apps);
+
+    const formatted = applications.map(app => {
+      // Mock the populated structure using snapshot data if the original is deleted
+      const mockJobPost = app.jobPostId || {
+        _id: 'deleted',
+        jobRole: app.jobSnapshot?.title || 'Position Filled',
+        workLocation: app.jobSnapshot?.workLocation || 'Unknown',
+        salary: app.jobSnapshot?.salary,
+        salaryType: app.jobSnapshot?.salaryType,
+        duration: app.jobSnapshot?.duration,
+        facilities: app.jobSnapshot?.facilities,
+        isFilled: true
+      };
+
+      const mockContractor = app.contractorId || {
+        _id: app.contractorSnapshot?.contractorId,
+        name: app.contractorSnapshot?.name || 'Unknown',
+        companyName: app.contractorSnapshot?.companyName || 'Unknown',
+        email: app.contractorSnapshot?.email,
+        phone: app.contractorSnapshot?.phone
+      };
+
+      return {
+        ...app.toObject(),
+        jobPostId: mockJobPost,
+        contractorId: mockContractor,
+        jobPostExists: !!app.jobPostId
+      };
+    });
+
+    res.json(formatted);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -392,7 +516,7 @@ exports.getAllAvailability = async (req, res) => {
 exports.directHireRequest = async (req, res) => {
   try {
     const professionalId = req.params.professionalId;
-    const { jobRole, workSiteLocation, salary, duration } = req.body;
+    const { jobRole, workSiteLocation, salary, duration, jobPostId } = req.body;
     
     const contractor = await User.findById(req.user.id);
     const professional = await User.findById(professionalId);
@@ -403,6 +527,7 @@ exports.directHireRequest = async (req, res) => {
     const request = new DirectHireRequest({
       contractorId: req.user.id,
       professionalId,
+      jobPostId: jobPostId || null,
       jobRole,
       workSiteLocation,
       salary,
@@ -416,13 +541,18 @@ exports.directHireRequest = async (req, res) => {
       title: 'Direct Hire Request',
       message: `${contractor.companyName || contractor.name} wants to hire you directly for the ${jobRole} role.`,
       type: 'Job',
-      actionTab: 'my-availability'
+      actionTab: NOTIFICATION_TABS.PROFESSIONAL_MY_AVAILABILITY,
+      relatedId: request._id
     });
     await notification.save();
 
     const io = req.app.get('io') || getIO();
     if (io) {
+      const populatedRequest = await DirectHireRequest.findById(request._id)
+        .populate('contractorId', 'name companyName email phone address workSiteLocation')
+        .populate('jobPostId', 'jobRole workLocation salary duration');
       io.to(`user:${professional._id}`).emit('notification', { notification });
+      io.to(`user:${professional._id}`).emit('newDirectHireRequest', { directHireRequest: populatedRequest });
     }
 
     // Email
@@ -449,8 +579,10 @@ exports.directHireRequest = async (req, res) => {
 
 exports.getDirectHireRequests = async (req, res) => {
   try {
+    console.log('Fetching direct hire requests for professional:', req.user.id);
     const requests = await DirectHireRequest.find({ professionalId: req.user.id })
-      .populate('contractorId', 'name companyName email phone workSiteLocation address')
+      .populate('contractorId', 'name companyName email phone address workSiteLocation')
+      .populate('jobPostId', 'jobRole workLocation salary duration')
       .sort({ createdAt: -1 });
     res.json(requests);
   } catch (error) {
@@ -486,6 +618,19 @@ exports.joinDirectHire = async (req, res) => {
     await hiredWorker.save();
 
     const profUser = await User.findById(professionalId);
+    profUser.currentContractorId = request.contractorId;
+    profUser.currentJobRole = request.jobRole;
+    profUser.isAvailable = false;
+    await profUser.save();
+
+    const contractor = await User.findById(request.contractorId);
+    if (contractor) {
+      if (!contractor.hiredProfessionals) contractor.hiredProfessionals = [];
+      contractor.hiredProfessionals.push(professionalId);
+      await contractor.save();
+    }
+
+    const io = getIO();
     
     // Auto-withdraw other pending requests (Applications & DirectHireRequests)
     await Application.updateMany(
@@ -497,8 +642,83 @@ exports.joinDirectHire = async (req, res) => {
       { status: 'Withdrawn' }
     );
 
-    // Remove availability post
-    await AvailabilityPost.deleteMany({ professionalId });
+    if (request.jobPostId) {
+      const jobPost = await JobPost.findById(request.jobPostId);
+      if (jobPost) {
+        await JobPost.findByIdAndDelete(jobPost._id);
+        console.log('Job post hard deleted after direct hire join:', jobPost._id);
+
+        if (io) {
+          io.to(`user:${jobPost.contractorId}`).emit('jobPostDeleted', { jobPostId: jobPost._id });
+        }
+
+        const otherJobApps = await Application.find({
+          jobPostId: jobPost._id,
+          status: { $in: ['Applied', 'Viewed', 'Shortlisted'] }
+        });
+
+        for (const otherApp of otherJobApps) {
+          otherApp.status = 'Position Filled';
+          await otherApp.save();
+
+          const filledNotification = new Notification({
+            userId: otherApp.professionalId,
+            type: 'Job',
+            title: 'Position Filled',
+            message: 'This position has been filled by another candidate. Thank you for your interest.',
+            actionTab: NOTIFICATION_TABS.PROFESSIONAL_MY_APPLICATIONS
+          });
+          await filledNotification.save();
+
+          if (io) {
+            io.to(`user:${otherApp.professionalId}`).emit('notification', {
+              notification: filledNotification
+            });
+          }
+        }
+
+        const otherDirectHires = await DirectHireRequest.find({
+          jobPostId: jobPost._id,
+          status: 'Pending'
+        });
+
+        for (const otherReq of otherDirectHires) {
+          otherReq.status = 'Position Filled';
+          await otherReq.save();
+
+          const filledNotification = new Notification({
+            userId: otherReq.professionalId,
+            type: 'Job',
+            title: 'Position Filled',
+            message: 'This position has been filled by another candidate. Thank you for your interest.',
+            actionTab: NOTIFICATION_TABS.PROFESSIONAL_MY_AVAILABILITY
+          });
+          await filledNotification.save();
+
+          if (io) {
+            io.to(`user:${otherReq.professionalId}`).emit('notification', {
+              notification: filledNotification
+            });
+          }
+        }
+      }
+    }
+
+    // Mark availability post as hired instead of deleting
+    await AvailabilityPost.updateMany(
+      { professionalId },
+      { 
+        isHired: true,
+        hiredSnapshot: {
+          contractorId: contractor._id,
+          contractorName: contractor.name,
+          companyName: contractor.companyName,
+          phone: contractor.phone,
+          email: contractor.email,
+          hireDate: new Date()
+        }
+      }
+    );
 
     // Notify Contractor
     const notification = new Notification({
@@ -506,12 +726,13 @@ exports.joinDirectHire = async (req, res) => {
       title: 'Professional Has Joined',
       message: `${profUser.name} has accepted your direct hire request and joined as the ${request.jobRole}.`,
       type: 'Job',
-      actionTab: 'overview' // Used to be browse-professionals, but overview has the team list
+      actionTab: NOTIFICATION_TABS.CONTRACTOR_OVERVIEW // Used to be browse-professionals, but overview has the team list
     });
     await notification.save();
 
-    const io = getIO();
-    io.to(`user:${request.contractorId}`).emit('notification', { notification });
+    if (io) {
+      io.to(`user:${request.contractorId}`).emit('notification', { notification });
+    }
 
     await sendMail({
       to: (await User.findById(request.contractorId)).email,
@@ -545,7 +766,7 @@ exports.rejectDirectHire = async (req, res) => {
       title: 'Direct Hire Request Declined',
       message: `${profUser.name} has declined your hire request for the ${request.jobRole} role. Reason: ${rejectionReason}`,
       type: 'Job',
-      actionTab: 'browse-professionals'
+      actionTab: NOTIFICATION_TABS.CONTRACTOR_BROWSE_PROFESSIONALS
     });
     await notification.save();
 
@@ -598,7 +819,7 @@ exports.rejectApplication = async (req, res) => {
       title: 'Application Rejected',
       message: `${profUser.name} has rejected your hire offer for the ${application.jobPostId.jobRole}. Reason: ${rejectionReason}`,
       type: 'Job',
-      actionTab: 'job-posts'
+      actionTab: NOTIFICATION_TABS.CONTRACTOR_JOB_POSTS
     });
     await notification.save();
 
@@ -619,54 +840,218 @@ exports.rejectApplication = async (req, res) => {
 
 exports.submitResignation = async (req, res) => {
   try {
-    const { applicationId, directHireRequestId, resignationReason, additionalComments, lastWorkingDate } = req.body;
-    const professionalId = req.user.id;
+    const { reason } = req.body;
+    if (!reason || reason.length < 20 || reason.length > 300) {
+      return res.status(400).json({ message: 'Reason must be between 20 and 300 characters' });
+    }
 
-    let query = { professionalId, status: 'Active' };
-    if (applicationId) query.applicationId = applicationId;
-    else if (directHireRequestId) query.directHireRequestId = directHireRequestId;
-    else return res.status(400).json({ message: 'Missing join reference ID' });
+    const professional = await User.findById(req.user.id);
+    let contractorId = professional.currentContractorId;
+    let jobRole = professional.currentJobRole;
 
-    const hiredWorker = await HiredWorker.findOne(query);
-    if (!hiredWorker) return res.status(404).json({ message: 'Active position not found' });
+    if (!contractorId) {
+      const activeWorker = await HiredWorker.findOne({ professionalId: req.user.id, status: 'Active' });
+      if (activeWorker) {
+        contractorId = activeWorker.contractorId;
+        jobRole = activeWorker.jobRole;
+      } else {
+        const activeApp = await Application.findOne({ professionalId: req.user.id, status: { $in: ['Joined', 'Hired'] } }).sort({ updatedAt: -1 });
+        if (activeApp) {
+          contractorId = activeApp.contractorId;
+        } else {
+          const activeDirect = await DirectHireRequest.findOne({ professionalId: req.user.id, status: 'Joined' }).sort({ updatedAt: -1 });
+          if (activeDirect) {
+            contractorId = activeDirect.contractorId;
+            jobRole = activeDirect.jobRole;
+          }
+        }
+      }
+      
+      if (contractorId) {
+        professional.currentContractorId = contractorId;
+        professional.currentJobRole = jobRole;
+      }
+    }
 
-    hiredWorker.status = 'ResignationPending';
-    hiredWorker.resignationReason = resignationReason;
-    hiredWorker.additionalComments = additionalComments;
-    hiredWorker.resignationSubmittedDate = new Date();
-    // Use the backend calculation for security: today + 7 days
-    const lwd = new Date();
-    lwd.setDate(lwd.getDate() + 7);
-    hiredWorker.lastWorkingDate = lwd;
+    if (!contractorId) {
+      return res.status(400).json({ message: 'You are not currently hired' });
+    }
+    if (professional.isServingNotice) {
+      return res.status(400).json({ message: 'You are already serving a notice period' });
+    }
 
-    await hiredWorker.save();
+    const application = await Application.findOne({
+      professionalId: req.user.id,
+      status: { $in: ['Joined', 'Hired'] }
+    }).sort({ appliedAt: -1 });
 
-    const profUser = await User.findById(professionalId);
-    
+    if (application) {
+      application.status = 'Resigned';
+      application.resignedAt = new Date();
+      application.resignationReason = reason;
+      await application.save();
+    } else {
+      const directHire = await DirectHireRequest.findOne({
+        professionalId: req.user.id,
+        status: 'Joined'
+      }).sort({ updatedAt: -1 });
+      if (directHire) {
+        directHire.status = 'Resigned';
+        await directHire.save();
+      }
+    }
+
+    const noticeEndDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    professional.isServingNotice = true;
+    professional.noticeStartDate = new Date();
+    professional.noticeEndDate = noticeEndDate;
+    professional.isAvailable = false;
+    professional.resignationReason = reason;
+    await professional.save();
+
+    const contractor = await User.findById(contractorId);
+    if (contractor) {
+      contractor.hiredProfessionals = contractor.hiredProfessionals.filter(id => id.toString() !== req.user.id);
+      await contractor.save();
+    }
+
     const notification = new Notification({
-      userId: hiredWorker.contractorId,
-      title: 'Resignation Notice Received',
-      message: `${profUser.name} has submitted a resignation from the ${hiredWorker.jobRole} role. Last working date: ${lwd.toLocaleDateString()}`,
-      type: 'Job',
-      actionTab: 'overview'
+      userId: contractorId,
+      title: 'Team Member Resigned',
+      message: `${professional.name} has resigned from ${professional.currentJobRole || 'their role'}. Reason: ${reason}. They will serve a 7-day notice period.`,
+      type: 'Hire',
+      actionTab: NOTIFICATION_TABS.CONTRACTOR_MY_TEAM
     });
     await notification.save();
 
     const io = getIO();
-    io.to(`user:${hiredWorker.contractorId}`).emit('notification', { notification });
-
-    await sendMail({
-      to: (await User.findById(hiredWorker.contractorId)).email,
-      subject: 'Resignation Notice Received',
-      html: `
-        <p><strong>${profUser.name}</strong> has submitted a resignation from the <strong>${hiredWorker.jobRole}</strong> role.</p>
-        <p><strong>Reason:</strong> ${resignationReason}</p>
-        <p><strong>Comments:</strong> ${additionalComments}</p>
-        <p><strong>Last Working Date:</strong> ${lwd.toLocaleDateString()}</p>
-      `
+    io.to(`user:${contractorId}`).emit('contractor:teamMemberResigned', {
+      professionalId: req.user.id,
+      professionalName: professional.name,
+      jobRole: professional.currentJobRole,
+      reason,
+      noticeEndDate
     });
 
-    res.json({ message: 'Resignation submitted successfully', hiredWorker });
+    if (contractor && contractor.email) {
+      await sendMail({
+        to: contractor.email,
+        subject: `${professional.name} has submitted their resignation`,
+        html: `
+          <p><strong>${professional.name}</strong> has submitted a resignation from the <strong>${professional.currentJobRole || 'their role'}</strong> role.</p>
+          <p><strong>Reason:</strong> ${reason}</p>
+          <p><strong>Notice End Date:</strong> ${noticeEndDate.toLocaleDateString()}</p>
+          <p>You can send a Request to Stay from your My Team tab if you wish to retain them.</p>
+        `
+      });
+    }
+
+    res.json({ message: 'Resignation submitted successfully', noticeEndDate });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+exports.respondToStayRequest = async (req, res) => {
+  try {
+    const { response } = req.body;
+    if (!['accept', 'decline'].includes(response)) {
+      return res.status(400).json({ message: 'Invalid response' });
+    }
+
+    const professional = await User.findById(req.user.id);
+    if (!professional.isServingNotice) {
+      return res.status(400).json({ message: 'You are not serving a notice period' });
+    }
+
+    const contractorId = professional.currentContractorId;
+    const contractor = await User.findById(contractorId);
+
+    if (response === 'accept') {
+      professional.isServingNotice = false;
+      professional.noticeStartDate = null;
+      professional.noticeEndDate = null;
+      professional.isAvailable = true;
+      
+      const application = await Application.findOne({
+        professionalId: req.user.id,
+        status: 'Resigned'
+      }).sort({ appliedAt: -1 });
+
+      if (application) {
+        application.status = 'Hired';
+        await application.save();
+      }
+
+      if (contractor && !contractor.hiredProfessionals.includes(req.user.id)) {
+        contractor.hiredProfessionals.push(req.user.id);
+        await contractor.save();
+      }
+
+      const notification = new Notification({
+        userId: contractorId,
+        title: 'Request to Stay Accepted',
+        message: `${professional.name} has accepted your Request to Stay and will continue working.`,
+        type: 'Hire',
+        actionTab: NOTIFICATION_TABS.CONTRACTOR_MY_TEAM
+      });
+      await notification.save();
+
+      const io = getIO();
+      io.to(`user:${contractorId}`).emit('contractor:requestToStayAccepted', { professionalId: req.user.id });
+
+      if (contractor && contractor.email) {
+        await sendMail({
+          to: contractor.email,
+          subject: `${professional.name} has accepted your Request to Stay`,
+          html: `<p>Great news! <strong>${professional.name}</strong> has accepted your request and will continue working with you.</p>`
+        });
+      }
+    } else {
+      const notification = new Notification({
+        userId: contractorId,
+        title: 'Request to Stay Declined',
+        message: `${professional.name} has declined your Request to Stay. Notice period continues until ${new Date(professional.noticeEndDate).toLocaleDateString()}.`,
+        type: 'Hire',
+        actionTab: NOTIFICATION_TABS.CONTRACTOR_MY_TEAM
+      });
+      await notification.save();
+
+      const io = getIO();
+      io.to(`user:${contractorId}`).emit('contractor:requestToStayDeclined', { professionalId: req.user.id });
+
+      if (contractor && contractor.email) {
+        await sendMail({
+          to: contractor.email,
+          subject: `${professional.name} has declined your Request to Stay`,
+          html: `<p><strong>${professional.name}</strong> has declined your request to stay. Their notice period will continue until ${new Date(professional.noticeEndDate).toLocaleDateString()}.</p>`
+        });
+      }
+    }
+
+    await professional.save();
+    res.json({ message: 'Response recorded successfully' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+exports.getNoticeStatus = async (req, res) => {
+  try {
+    const professional = await User.findById(req.user.id);
+    let daysRemaining = 0;
+    if (professional.isServingNotice) {
+      daysRemaining = Math.ceil(
+        (new Date(professional.noticeEndDate) - new Date()) / (1000 * 60 * 60 * 24)
+      );
+    }
+    res.json({
+      isServingNotice: professional.isServingNotice,
+      noticeStartDate: professional.noticeStartDate,
+      noticeEndDate: professional.noticeEndDate,
+      daysRemaining,
+      currentContractorId: professional.currentContractorId
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -704,10 +1089,13 @@ exports.joinJob = async (req, res) => {
       await otherApp.save();
     }
 
-    // 5. Mark the job post as Filled
-    jobPost.isFilled = true;
-    jobPost.filledAt = new Date();
-    await jobPost.save();
+    // 5. Delete the job post
+    await JobPost.findByIdAndDelete(jobPost._id);
+    console.log('Job post hard deleted after professional joined:', jobPost._id);
+
+    if (io) {
+      io.to(`user:${jobPost.contractorId}`).emit('jobPostDeleted', { jobPostId: jobPost._id });
+    }
 
     // 6. Create HiredWorker record
     const hiredWorker = new HiredWorker({
@@ -718,19 +1106,33 @@ exports.joinJob = async (req, res) => {
       jobRole: jobPost.jobRole,
       salary: jobPost.salary,
       salaryType: jobPost.salaryType,
-      workLocation: jobPost.workLocation
+      workLocation: jobPost.workLocation,
+      status: 'Active'
     });
     await hiredWorker.save();
 
-    // 7. Notify the contractor that the professional has joined
+    // 7. Update Professional and Contractor User Models
     const professional = await User.findById(professionalId);
+    professional.currentContractorId = application.contractorId;
+    professional.currentJobRole = jobPost.jobRole;
+    professional.isAvailable = false;
+    await professional.save();
+
+    const contractor = await User.findById(application.contractorId);
+    if (contractor) {
+      if (!contractor.hiredProfessionals) contractor.hiredProfessionals = [];
+      contractor.hiredProfessionals.push(professionalId);
+      await contractor.save();
+    }
+
+    // 8. Notify the contractor that the professional has joined
     const contractorNotification = new Notification({
       userId: application.contractorId,
       type: 'Hire',
       title: 'Professional Has Joined!',
       message: `${professional.name} has accepted the position and joined as ${jobPost.jobRole}!`,
       relatedId: jobPost._id,
-      actionTab: 'My Job Posts'
+      actionTab: NOTIFICATION_TABS.CONTRACTOR_JOB_POSTS
     });
     await contractorNotification.save();
 
@@ -752,11 +1154,11 @@ exports.joinJob = async (req, res) => {
 
       const filledNotification = new Notification({
         userId: otherApp.professionalId,
-        type: 'General',
+        type: 'Job',
         title: 'Position Filled',
-        message: `The position for ${jobPost.jobRole} has been filled. Thank you for your interest.`,
+        message: 'This position has been filled by another candidate. Thank you for your interest.',
         relatedId: jobPost._id,
-        actionTab: 'Applications'
+        actionTab: NOTIFICATION_TABS.PROFESSIONAL_MY_APPLICATIONS
       });
       await filledNotification.save();
 
@@ -767,17 +1169,32 @@ exports.joinJob = async (req, res) => {
       }
     }
 
-    // 9. Update applicant status in the JobPost embedded array too
-    if (jobPost.applicants) {
-      for (const applicant of jobPost.applicants) {
-        if (applicant.professionalId.toString() === professionalId) {
-          applicant.status = 'Hired';
-        } else {
-          applicant.status = 'Rejected';
-        }
+    const otherDirectHires = await DirectHireRequest.find({
+      jobPostId: jobPost._id,
+      professionalId: { $ne: professionalId },
+      status: 'Pending'
+    });
+
+    for (const otherReq of otherDirectHires) {
+      otherReq.status = 'Position Filled';
+      await otherReq.save();
+
+      const filledNotification = new Notification({
+        userId: otherReq.professionalId,
+        type: 'Job',
+        title: 'Position Filled',
+        message: 'This position has been filled by another candidate. Thank you for your interest.',
+        actionTab: NOTIFICATION_TABS.PROFESSIONAL_MY_AVAILABILITY
+      });
+      await filledNotification.save();
+
+      if (io) {
+        io.to(`user:${otherReq.professionalId}`).emit('notification', {
+          notification: filledNotification
+        });
       }
-      await jobPost.save();
     }
+
 
     res.json({ message: 'Successfully joined! Welcome aboard.', hiredWorker });
   } catch (error) {

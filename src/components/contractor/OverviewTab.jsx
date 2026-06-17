@@ -50,6 +50,22 @@ const OverviewTab = ({ setActiveTab }) => {
       }
     };
     fetchData();
+
+    import('../../socket').then(({ default: socket }) => {
+      const handleMemberResigned = (data) => {
+        setStats(prev => prev ? { ...prev, hiredCount: Math.max(0, prev.hiredCount - 1) } : prev);
+        setTeam(prev => prev.map(m => m._id === data.professionalId ? { 
+          ...m, 
+          isServingNotice: true, 
+          noticeEndDate: data.noticeEndDate, 
+          resignationReason: data.reason 
+        } : m));
+      };
+      socket.on('contractor:teamMemberResigned', handleMemberResigned);
+      return () => {
+        socket.off('contractor:teamMemberResigned', handleMemberResigned);
+      };
+    });
   }, []);
 
   if (loading) return (
@@ -150,30 +166,30 @@ const OverviewTab = ({ setActiveTab }) => {
       <div className="space-y-4">
          <div className="flex items-center justify-between">
             <h3 className="text-xl font-black text-primary dark:text-white uppercase tracking-tight">Active Team Members</h3>
-            <button onClick={() => setActiveTab('Browse Professionals')} className="text-xs font-black text-accent p-2 bg-accent/10 rounded-xl hover:bg-accent hover:text-white transition-all tracking-widest uppercase">Hire More</button>
+            <button onClick={() => setActiveTab('browse-professionals')} className="text-xs font-black text-accent p-2 bg-accent/10 rounded-xl hover:bg-accent hover:text-white transition-all tracking-widest uppercase">Hire More</button>
          </div>
          <div className="grid grid-cols-1 gap-6">
             {team.length > 0 ? team.map((member, i) => (
               <div key={member._id || i} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 rounded-[32px] flex flex-col gap-4 hover:border-accent transition-all shadow-sm group">
                  <div className="flex items-center gap-4">
                    <div className="w-14 h-14 rounded-2xl bg-slate-50 dark:bg-slate-800 flex items-center justify-center font-black text-xl text-primary dark:text-white border border-slate-100 dark:border-slate-700 uppercase group-hover:scale-110 transition-transform">
-                      {member.professionalId?.name?.charAt(0) || 'P'}
+                      {(member.name || member.professionalId?.name)?.charAt(0) || 'P'}
                    </div>
                    <div className="flex-1 min-w-0">
-                      <h4 className="font-black text-primary dark:text-white truncate">{member.professionalId?.name || 'Professional'}</h4>
+                      <h4 className="font-black text-primary dark:text-white truncate">{member.name || member.professionalId?.name || 'Unknown'}</h4>
                       <p className="text-[10px] font-black text-accent uppercase tracking-widest">{member.jobRole || member.professionalId?.jobRole || 'Professional'}</p>
                       <div className="flex items-center gap-3 mt-1">
                          <div className="flex items-center gap-1">
-                            <span className={`w-2 h-2 rounded-full ${['Active', 'ResignationPending', 'ResignationAccepted'].includes(member.status) ? 'bg-green-500 animate-pulse' : 'bg-slate-400'}`} />
-                            <span className="text-[10px] font-bold text-slate-400 uppercase">{member.status}</span>
+                            <span className={`w-2 h-2 rounded-full ${(member.isServingNotice || member.professionalId?.isServingNotice) ? 'bg-orange-500 animate-pulse' : 'bg-green-500'}`} />
+                            <span className="text-[10px] font-bold text-slate-400 uppercase">{(member.isServingNotice || member.professionalId?.isServingNotice) ? 'Serving Notice' : 'Active'}</span>
                          </div>
-                         {member.workLocation && (
-                           <span className="text-[10px] font-bold text-slate-400 truncate">• {member.workLocation}</span>
+                         {(member.locationPreference || member.professionalId?.locationPreference) && (
+                           <span className="text-[10px] font-bold text-slate-400 truncate">• {member.locationPreference || member.professionalId?.locationPreference}</span>
                          )}
                       </div>
                    </div>
                    <button
-                      onClick={() => setReviewProfessional(member.professionalId)}
+                      onClick={() => setReviewProfessional(member._id)}
                       className="w-10 h-10 rounded-xl bg-orange-50 dark:bg-orange-900/20 text-orange-500 flex items-center justify-center hover:bg-orange-100 hover:scale-110 transition-all shrink-0"
                       title="Leave a Review"
                    >
@@ -181,42 +197,26 @@ const OverviewTab = ({ setActiveTab }) => {
                    </button>
                  </div>
 
-                 {member.status === 'ResignationPending' && (
-                   <div className="bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-800 rounded-2xl p-4 mt-2">
-                     <p className="text-sm font-bold text-red-600 mb-1">Resignation Request Received</p>
-                     <p className="text-xs text-red-500 mb-4">Reason: {member.resignationReason}</p>
+                 {member.isServingNotice && (
+                   <div className="bg-yellow-50 dark:bg-yellow-900/10 border border-yellow-200 dark:border-yellow-800 rounded-2xl p-4 mt-2">
+                     <p className="text-sm font-bold text-yellow-600 mb-1">Resignation Request Received</p>
+                     <p className="text-xs text-yellow-500 mb-4">Reason: {member.resignationReason}</p>
+                     <p className="text-xs font-bold text-yellow-600 mb-4">
+                       Notice period ends on {new Date(member.noticeEndDate).toLocaleDateString()}.
+                     </p>
                      <div className="flex gap-2">
                        <button 
                          onClick={async () => {
                            try {
-                             await api.put(`/api/contractor/resignation/${member._id}/accept`);
-                             setTeam(team.map(m => m._id === member._id ? { ...m, status: 'ResignationAccepted', lastWorkingDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) } : m));
-                           } catch (err) { console.error(err); }
-                         }}
-                         className="px-4 py-2 bg-red-600 text-white rounded-xl text-xs font-black transition-all hover:bg-red-700"
-                       >
-                         Accept Resignation
-                       </button>
-                       <button 
-                         onClick={async () => {
-                           try {
-                             await api.post(`/api/contractor/resignation/${member._id}/request-stay`);
+                             await api.post(`/api/contractor/resignation/${member._id}/request-stay`, { message: "Please stay with us, we value your work!" });
                              alert('Request sent to professional.');
-                           } catch (err) { console.error(err); }
+                           } catch (err) { alert(err.response?.data?.message || 'Failed to send'); }
                          }}
                          className="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-xl text-xs font-black transition-all hover:bg-slate-200"
                        >
                          Request to Stay
                        </button>
                      </div>
-                   </div>
-                 )}
-
-                 {member.status === 'ResignationAccepted' && (
-                   <div className="bg-yellow-50 dark:bg-yellow-900/10 border border-yellow-200 dark:border-yellow-800 rounded-2xl p-4 mt-2">
-                     <p className="text-xs font-bold text-yellow-600">
-                       Resignation Accepted. Notice period ends on {new Date(member.lastWorkingDate).toLocaleDateString()}.
-                     </p>
                    </div>
                  )}
               </div>

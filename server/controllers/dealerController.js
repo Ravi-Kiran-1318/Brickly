@@ -7,6 +7,7 @@ const Deal = require('../models/Deal');
 const Notification = require('../models/Notification');
 const DealerReview = require('../models/DealerReview');
 const { sendMail } = require('../utils/mailer');
+const NOTIFICATION_TABS = require('../../shared/notificationConstants');
 
 // --- Profile ---
 exports.getProfile = async (req, res) => {
@@ -119,7 +120,7 @@ exports.updateProduct = async (req, res) => {
         title: 'Low Stock Alert',
         message: `Product "${product.name}" is low on stock (${product.stockQuantity} remaining).`,
         type: 'General',
-        actionTab: 'Inventory'
+        actionTab: NOTIFICATION_TABS.DEALER_INVENTORY
       });
       await notification.save();
       io.to(`user:${req.user.id}`).emit('dealer:lowStock', notification);
@@ -263,7 +264,7 @@ exports.respondToQuote = async (req, res) => {
       title: 'New Quote Response',
       message: `${dealer.shopName} has responded to your quote request for ${quoteRequest.projectType || 'materials'}.`,
       type: 'Quote',
-      actionTab: 'My Quotes'
+      actionTab: NOTIFICATION_TABS.CONTRACTOR_MY_QUOTES
     });
     await notification.save();
 
@@ -366,7 +367,7 @@ exports.updateOrderStatus = async (req, res) => {
         title: 'Order Delivered',
         message: `Your order from ${dealer.shopName} was delivered. Leave a review within 30 days.`,
         type: 'Order',
-        actionTab: 'Orders'
+        actionTab: NOTIFICATION_TABS.CONTRACTOR_ORDERS
       });
       await notification.save();
       if (io) {
@@ -385,7 +386,7 @@ exports.updateOrderStatus = async (req, res) => {
       title: 'Order Status Updated',
       message: `Your order from ${dealer.shopName} is now ${status}.`,
       type: 'Order',
-      actionTab: 'Orders'
+      actionTab: NOTIFICATION_TABS.CONTRACTOR_ORDERS
     });
     await notification.save();
 

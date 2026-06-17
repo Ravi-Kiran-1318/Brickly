@@ -6,6 +6,7 @@ const Notification = require('../models/Notification');
 const { getIO } = require('../socket');
 const { ROLE_HIERARCHY, getTradeForRole } = require('../utils/roleHierarchy');
 const { geocodeAddress } = require('../utils/geocoder');
+const NOTIFICATION_TABS = require('../../shared/notificationConstants');
 
 exports.createJob = async (req, res) => {
   try {
@@ -58,7 +59,7 @@ exports.createJob = async (req, res) => {
         title: 'New Job Available',
         message: `${contractor.companyName || contractor.name} has posted a new job for your trade. Role: ${job.jobRole}, Salary: ${jobSummary.salary}, Location: ${job.workLocation}.`,
         relatedId: job._id,
-        actionTab: 'job-feed'
+        actionTab: NOTIFICATION_TABS.PROFESSIONAL_JOB_FEED
       });
       await notification.save();
 
@@ -167,7 +168,7 @@ exports.hireProfessional = async (req, res) => {
       title: 'You Have Been Hired',
       message: `${contractor.companyName || contractor.name} has hired you for the ${job.jobRole} position.`,
       relatedId: job._id,
-      actionTab: 'Applications'
+      actionTab: NOTIFICATION_TABS.PROFESSIONAL_MY_APPLICATIONS
     });
     await notification.save();
 

@@ -6,8 +6,9 @@ import { useAuth } from '../../context/AuthContext';
 import {
   IconBriefcase, IconMapPin, IconClock, IconCurrencyRupee,
   IconFilter, IconSearch, IconChevronRight, IconCircleCheck,
-  IconAlertCircle, IconMapRoute, IconX
+  IconAlertCircle, IconMapRoute, IconX, IconDoorExit
 } from '@tabler/icons-react';
+import ResignationModal from './ResignationModal';
 
 const RouteMap = lazy(() => import('./RouteMap'));
 
@@ -22,7 +23,7 @@ const calculateDistance = (lat1, lon1, lat2, lon2) => {
   return (R * c).toFixed(1);
 };
 
-const JobsFeedTab = ({ openMapJobId, setOpenMapJobId }) => {
+const JobsFeedTab = ({ openMapJobId, setOpenMapJobId, directHireRequests = [], setDirectHireRequests }) => {
   const { user } = useAuth();
   const [jobs, setJobs] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -34,7 +35,15 @@ const JobsFeedTab = ({ openMapJobId, setOpenMapJobId }) => {
     maxDistance: 'Any Distance'
   });
 
-  const [workingStatus, setWorkingStatus] = useState({ isWorking: false, contractorName: '', noticePeriodEnd: null });
+  const [workingStatus, setWorkingStatus] = useState({
+    isWorking: false,
+    isInNoticePeriod: false,
+    currentJob: null,
+    lastWorkingDate: null,
+    contractorName: null,
+    contractorId: null
+  });
+  const [isResignModalOpen, setIsResignModalOpen] = useState(false);
 
   useEffect(() => {
     fetchJobs();
@@ -50,44 +59,37 @@ const JobsFeedTab = ({ openMapJobId, setOpenMapJobId }) => {
       }
     };
 
+    const handleStatusRefresh = () => {
+      fetchWorkingStatus();
+      fetchJobs();
+    };
+
     socket.on('professional:newJob', handleNewJob);
+    socket.on('resignationAccepted', handleStatusRefresh);
+    socket.on('resignationComplete', handleStatusRefresh);
 
     return () => {
       socket.off('professional:newJob', handleNewJob);
+      socket.off('resignationAccepted', handleStatusRefresh);
+      socket.off('resignationComplete', handleStatusRefresh);
     };
   }, [filters]);
 
   const fetchWorkingStatus = async () => {
     try {
-      // Find out if the user has any 'Joined', 'ResignationPending', or 'ResignationAccepted'
-      const resApps = await api.get('/api/professional/applications');
-      const resDirect = await api.get('/api/professional/direct-hire-requests');
-      
-      let currentJob = null;
-      // We will look for an active hired worker record, but since we don't have a direct endpoint for it easily right now,
-      // we can deduce it from the joined status or just create a quick endpoint, but checking applications is faster since we have the data.
-      // Wait, we can fetch from HiredWorker if needed. Since we only have the application, we don't know the exact noticePeriodEnd without HiredWorker.
-      // Let's use a quick fetch to profile stats or a new endpoint? Actually, I can just fetch it from the backend if I add a route.
-      // Wait, I can just fetch from professional applications and direct hires, but notice period requires HiredWorker.
-      // I'll make a direct API call to `/api/auth/profile/:id` and maybe backend populated it?
-      // Let's fetch HiredWorker directly by a new route, but I don't have one.
-      // I will add an endpoint in `professionalController.js` to get active work status, or just use what I have.
-      // Actually, I can add a small GET route `/api/professional/active-work` in `professional.js` to get the `HiredWorker` record.
-      // But let's just make it simpler for now without touching backend again if I can avoid it.
-      // Wait, the requirement says "Fetch the professional's current joined status... Check if any application or direct hire request has status Joined."
-      
-      const apps = [...resApps.data, ...resDirect.data];
-      const joinedApp = apps.find(a => ['Joined', 'ResignationPending', 'ResignationAccepted'].includes(a.status));
-      
-      if (joinedApp) {
-        // Find if they are in notice period (we don't have lastWorkingDate directly on app, but we can guess or if we don't have it we just show the yellow banner without date until backend gives it, but the requirement says to show last working date)
-        setWorkingStatus({
-          isWorking: true,
-          contractorName: joinedApp.contractorId?.companyName || joinedApp.contractorId?.name || 'Contractor',
-          isResigning: joinedApp.status === 'ResignationPending' || joinedApp.status === 'ResignationAccepted'
-        });
-      }
-    } catch (err) { console.error('Failed to fetch working status', err); }
+      const res = await api.get('/api/professional/working-status');
+      setWorkingStatus(res.data);
+    } catch (err) {
+      console.error('Error fetching working status:', err);
+      setWorkingStatus({
+        isWorking: false,
+        isInNoticePeriod: false,
+        currentJob: null,
+        lastWorkingDate: null,
+        contractorName: null,
+        contractorId: null
+      });
+    }
   };
 
   const fetchJobs = async () => {
@@ -113,6 +115,37 @@ const JobsFeedTab = ({ openMapJobId, setOpenMapJobId }) => {
     } catch (err) {
       console.error(err);
       alert(err.response?.data?.message || 'Failed to apply');
+    }
+  };
+
+  const handleJoinDirectHire = async (requestId) => {
+    if (!window.confirm("Are you sure you want to join this position? This will withdraw your other pending applications.")) return;
+    try {
+      await api.put(`/api/professional/direct-hire-requests/${requestId}/join`);
+      alert('Successfully joined position!');
+      setDirectHireRequests(prev => prev.map(req => {
+        if (req._id === requestId) return { ...req, status: 'Joined' };
+        if (req.status === 'Pending') return { ...req, status: 'Withdrawn' };
+        return req;
+      }));
+      fetchJobs();
+      fetchWorkingStatus();
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to join');
+    }
+  };
+
+  const handleRejectDirectHire = async (requestId) => {
+    const reason = window.prompt("Please enter a reason for rejection (min 10 characters):");
+    if (!reason || reason.length < 10) return alert('Please provide at least 10 characters.');
+    try {
+      await api.put(`/api/professional/direct-hire-requests/${requestId}/reject`, { rejectionReason: reason });
+      alert('Your response has been submitted.');
+      setDirectHireRequests(prev => prev.map(req => 
+        req._id === requestId ? { ...req, status: 'Rejected' } : req
+      ));
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to reject');
     }
   };
 
@@ -168,11 +201,22 @@ const JobsFeedTab = ({ openMapJobId, setOpenMapJobId }) => {
             value={filters.maxDistance} onChange={(e) => setFilters({ ...filters, maxDistance: e.target.value })}
           >
             <option value="Any Distance">Any Distance</option>
-            <option value="Within 10 km">Within 10 km</option>
-            <option value="Within 25 km">Within 25 km</option>
-            <option value="Within 50 km">Within 50 km</option>
+            <option value="5">Within 5 km</option>
+            <option value="10">Within 10 km</option>
+            <option value="25">Within 25 km</option>
+            <option value="50">Within 50 km</option>
           </select>
         </div>
+        <button
+          onClick={() => {
+            fetchWorkingStatus();
+            fetchJobs();
+          }}
+          className="bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 p-3 rounded-2xl transition-all"
+          title="Refresh Feed"
+        >
+          <IconRefresh size={20} className={loading ? 'animate-spin text-accent' : ''} />
+        </button>
         <div className="relative w-full md:w-48">
           <IconFilter className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
           <select
@@ -194,9 +238,13 @@ const JobsFeedTab = ({ openMapJobId, setOpenMapJobId }) => {
             job={job} 
             user={user}
             workingStatus={workingStatus}
+            directHireRequests={directHireRequests}
             onApply={() => handleApply(job._id)} 
+            onJoin={handleJoinDirectHire}
+            onReject={handleRejectDirectHire}
             openMapJobId={openMapJobId}
             setOpenMapJobId={setOpenMapJobId}
+            setIsResignModalOpen={setIsResignModalOpen}
           />
         ))}
         {sortedJobs.length === 0 && (
@@ -207,14 +255,23 @@ const JobsFeedTab = ({ openMapJobId, setOpenMapJobId }) => {
           </div>
         )}
       </div>
+
+      <ResignationModal
+        isOpen={isResignModalOpen}
+        onClose={() => setIsResignModalOpen(false)}
+        contractorName={workingStatus.contractorName}
+        jobRole={user?.jobRole || 'Professional'}
+        onSuccess={() => window.location.reload()}
+      />
     </div>
   );
 };
 
-const JobCard = ({ job, user, workingStatus, onApply, openMapJobId, setOpenMapJobId }) => {
+const JobCard = ({ job, user, workingStatus, directHireRequests, onApply, onJoin, onReject, openMapJobId, setOpenMapJobId, setIsResignModalOpen }) => {
   const hasCoordinates = job.workSiteLocation && job.workSiteLocation.coordinates && job.workSiteLocation.coordinates.length === 2;
   const userHasCoordinates = user?.location?.coordinates && user.location.coordinates.length === 2;
   const isMapOpen = openMapJobId === job._id;
+  const matchingDirectHire = directHireRequests?.find(req => (req.jobPostId?._id || req.jobPostId) === job._id);
 
   let distanceBadge = null;
   if (hasCoordinates && userHasCoordinates) {
@@ -222,13 +279,25 @@ const JobCard = ({ job, user, workingStatus, onApply, openMapJobId, setOpenMapJo
     distanceBadge = <span className="bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-[10px] font-black px-2 py-1 rounded-md flex items-center gap-1"><IconMapPin size={12}/> {dist} km away</span>;
   }
 
+  let noticeDaysRemaining = 0;
+  if (user?.isServingNotice && user?.noticeEndDate) {
+    const distance = new Date(user.noticeEndDate).getTime() - new Date().getTime();
+    noticeDaysRemaining = Math.max(0, Math.ceil(distance / (1000 * 60 * 60 * 24)));
+  }
+
   return (
     <motion.div
+      id={`job-${job._id}`}
       layout
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className="bg-white dark:bg-slate-900 rounded-[35px] border border-slate-200 dark:border-slate-800 p-6 shadow-sm hover:shadow-xl hover:border-accent transition-all group overflow-hidden relative flex flex-col"
+      className={`bg-white dark:bg-slate-900 rounded-[35px] border ${matchingDirectHire && matchingDirectHire.status === 'Pending' ? 'border-orange-500 shadow-xl shadow-orange-500/10' : 'border-slate-200 dark:border-slate-800'} p-6 shadow-sm hover:shadow-xl hover:border-accent transition-all group overflow-hidden relative flex flex-col pt-8`}
     >
+      {matchingDirectHire && matchingDirectHire.status === 'Pending' && (
+        <div className="absolute top-0 left-0 right-0 bg-orange-500 text-white text-[10px] font-black uppercase text-center py-1 tracking-widest z-10">
+          Direct Hire Request
+        </div>
+      )}
       <div className="flex-1">
         <div className="flex items-start justify-between gap-4 mb-6">
           <div className="flex items-center gap-4">
@@ -292,12 +361,27 @@ const JobCard = ({ job, user, workingStatus, onApply, openMapJobId, setOpenMapJo
             )}
           </div>
 
-          {job.hasApplied ? (
+          {matchingDirectHire && matchingDirectHire.status === 'Pending' ? (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => onJoin(matchingDirectHire._id)}
+                className="bg-green-500 hover:bg-green-600 text-white px-6 py-3 rounded-2xl font-black text-sm transition-all shadow-lg shadow-green-500/20"
+              >
+                Join Now
+              </button>
+              <button
+                onClick={() => onReject(matchingDirectHire._id)}
+                className="bg-red-100 hover:bg-red-200 text-red-600 dark:bg-red-900/30 dark:hover:bg-red-900/50 px-6 py-3 rounded-2xl font-black text-sm transition-all"
+              >
+                Reject
+              </button>
+            </div>
+          ) : job.hasApplied ? (
             <div className="flex items-center gap-2 text-green-500 font-black text-sm uppercase tracking-widest px-6 py-3 bg-green-500/10 rounded-2xl border border-green-500/20">
               <IconCircleCheck size={20} /> Applied
             </div>
-          ) : workingStatus.isWorking && !workingStatus.isResigning ? (
-            <button disabled className="bg-slate-200 dark:bg-slate-800 text-slate-400 px-8 py-3 rounded-2xl font-black text-sm">
+          ) : workingStatus.isWorking && !workingStatus.isInNoticePeriod ? (
+            <button disabled className="bg-slate-200 dark:bg-slate-800 text-slate-400 px-8 py-3 rounded-2xl font-black text-sm cursor-not-allowed">
               Currently Working
             </button>
           ) : (
@@ -311,20 +395,31 @@ const JobCard = ({ job, user, workingStatus, onApply, openMapJobId, setOpenMapJo
         </div>
 
         {/* Working Status Banners */}
-        {workingStatus.isWorking && !workingStatus.isResigning && !job.hasApplied && (
-          <div className="bg-orange-50 dark:bg-orange-900/10 border border-orange-200 dark:border-orange-800 rounded-xl p-3 flex items-start gap-2">
-            <IconAlertCircle size={16} className="text-orange-500 shrink-0 mt-0.5" />
-            <p className="text-xs font-bold text-orange-800 dark:text-orange-300 leading-snug">
-              You are currently working with {workingStatus.contractorName}. You must resign before applying to new positions.
-            </p>
+        {workingStatus.isWorking && !workingStatus.isInNoticePeriod && !job.hasApplied && (
+          <div className="bg-orange-50 dark:bg-orange-900/10 border border-orange-200 dark:border-orange-800 rounded-xl p-3 flex flex-col gap-3">
+            <div className="flex items-start gap-2">
+              <IconAlertCircle size={16} className="text-orange-500 shrink-0 mt-0.5" />
+              <p className="text-xs font-bold text-orange-800 dark:text-orange-300 leading-snug">
+                You are currently working with {workingStatus.contractorName}. You must resign before applying to new positions.
+              </p>
+            </div>
+            <button 
+              onClick={() => setIsResignModalOpen(true)}
+              className="w-full bg-red-500 hover:bg-red-600 text-white py-2 rounded-lg font-black text-xs flex items-center justify-center gap-2 transition-all shadow-md"
+            >
+              <IconDoorExit size={16} /> Resign from Current Job
+            </button>
           </div>
         )}
-        {workingStatus.isResigning && !job.hasApplied && (
-          <div className="bg-yellow-50 dark:bg-yellow-900/10 border border-yellow-200 dark:border-yellow-800 rounded-xl p-3 flex items-start gap-2">
-            <IconAlertCircle size={16} className="text-yellow-600 shrink-0 mt-0.5" />
-            <p className="text-xs font-bold text-yellow-800 dark:text-yellow-400 leading-snug">
-              Your resignation is pending with {workingStatus.contractorName}. You can apply but cannot join until your notice period ends.
-            </p>
+
+        {workingStatus.isWorking && workingStatus.isInNoticePeriod && !job.hasApplied && (
+          <div className="bg-yellow-50 dark:bg-yellow-900/10 border border-yellow-200 dark:border-yellow-800 rounded-xl p-3 flex flex-col gap-3">
+            <div className="flex items-start gap-2">
+              <IconAlertCircle size={16} className="text-yellow-500 shrink-0 mt-0.5" />
+              <p className="text-xs font-bold text-yellow-800 dark:text-yellow-300 leading-snug">
+                Your resignation is pending with {workingStatus.contractorName}. You can apply but cannot join until your notice period ends{workingStatus.lastWorkingDate ? ` on ${new Date(workingStatus.lastWorkingDate).toLocaleDateString()}` : ''}.
+              </p>
+            </div>
           </div>
         )}
       </div>

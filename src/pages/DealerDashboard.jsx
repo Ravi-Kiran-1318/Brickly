@@ -12,6 +12,7 @@ import {
 } from '@tabler/icons-react';
 import { useTheme } from '../context/ThemeContext';
 import ThemeToggle from '../components/ThemeToggle';
+import NOTIFICATION_TABS from '../../shared/notificationConstants.json';
 
 import OverviewTab from '../components/dealer/OverviewTab';
 import InventoryTab from '../components/dealer/InventoryTab';
@@ -24,7 +25,7 @@ import NotificationsTab from '../components/dealer/NotificationsTab';
 const DealerDashboard = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState('Overview');
+  const [activeTab, setActiveTab] = useState(NOTIFICATION_TABS.DEALER_OVERVIEW);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [unreadCount, setUnreadCount] = useState(0);
   const { isDark, toggleTheme } = useTheme();
@@ -70,23 +71,23 @@ const DealerDashboard = () => {
   }, [user]);
 
   const navItems = [
-    { label: 'Overview', icon: IconLayoutDashboard },
-    { label: 'Inventory', icon: IconPackage },
-    { label: 'Quote Requests', icon: IconFileInvoice },
-    { label: 'Orders', icon: IconTruck },
-    { label: 'Deals Board', icon: IconTag },
-    { label: 'Reviews', icon: IconStar },
+    { id: NOTIFICATION_TABS.DEALER_OVERVIEW, label: 'Overview', icon: IconLayoutDashboard },
+    { id: NOTIFICATION_TABS.DEALER_INVENTORY, label: 'Inventory', icon: IconPackage },
+    { id: NOTIFICATION_TABS.DEALER_QUOTE_REQUESTS, label: 'Quote Requests', icon: IconFileInvoice },
+    { id: NOTIFICATION_TABS.DEALER_ORDERS, label: 'Orders', icon: IconTruck },
+    { id: NOTIFICATION_TABS.DEALER_DEALS_BOARD, label: 'Deals Board', icon: IconTag },
+    { id: 'reviews', label: 'Reviews', icon: IconStar },
   ];
 
   const renderActiveTab = () => {
     switch (activeTab) {
-      case 'Overview': return <OverviewTab setActiveTab={setActiveTab} />;
-      case 'Inventory': return <InventoryTab />;
-      case 'Quote Requests': return <QuotesInboxTab />;
-      case 'Orders': return <OrdersTab />;
-      case 'Deals Board': return <DealsTab />;
-      case 'Reviews': return <ReviewsTab />;
-      case 'Notifications': return <NotificationsTab setUnreadCount={setUnreadCount} setActiveTab={setActiveTab} />;
+      case NOTIFICATION_TABS.DEALER_OVERVIEW: return <OverviewTab setActiveTab={setActiveTab} />;
+      case NOTIFICATION_TABS.DEALER_INVENTORY: return <InventoryTab />;
+      case NOTIFICATION_TABS.DEALER_QUOTE_REQUESTS: return <QuotesInboxTab />;
+      case NOTIFICATION_TABS.DEALER_ORDERS: return <OrdersTab />;
+      case NOTIFICATION_TABS.DEALER_DEALS_BOARD: return <DealsTab />;
+      case 'reviews': return <ReviewsTab />;
+      case NOTIFICATION_TABS.DEALER_NOTIFICATIONS: return <NotificationsTab setUnreadCount={setUnreadCount} setActiveTab={setActiveTab} />;
       default: return <OverviewTab setActiveTab={setActiveTab} />;
     }
   };
@@ -135,14 +136,14 @@ const DealerDashboard = () => {
           {navItems.map((item) => (
             <button
               key={item.label}
-              onClick={() => setActiveTab(item.label)}
+              onClick={() => setActiveTab(item.id)}
               className={`w-full flex items-center gap-3 p-3 rounded-xl transition-all relative group ${
-                activeTab === item.label ? 'bg-accent text-white shadow-lg shadow-orange-500/20' : 'text-blue-100/60 hover:bg-white/5 hover:text-white'
+                activeTab === item.id ? 'bg-accent text-white shadow-lg shadow-orange-500/20' : 'text-blue-100/60 hover:bg-white/5 hover:text-white'
               }`}
             >
-              <item.icon size={22} className={activeTab === item.label ? 'text-white' : 'group-hover:scale-110 transition-transform'} />
+              <item.icon size={22} className={activeTab === item.id ? 'text-white' : 'group-hover:scale-110 transition-transform'} />
               {isSidebarOpen && <span className="text-sm font-bold">{item.label}</span>}
-              {item.badge && activeTab !== item.label && (
+              {item.badge && activeTab !== item.id && (
                 <div className="absolute top-2 right-2 w-2 h-2 bg-orange-500 rounded-full animate-[blink_1s_ease-in-out_infinite]" />
               )}
             </button>
@@ -159,12 +160,12 @@ const DealerDashboard = () => {
             <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 hover:bg-white/5 rounded-lg" style={{ color: 'var(--text-secondary)' }}>
               {isSidebarOpen ? <IconX size={24} /> : <IconMenu2 size={24} />}
             </button>
-            <h1 className="text-xl font-black tracking-tight" style={{ color: 'var(--text-primary)' }}>{activeTab}</h1>
+            <h1 className="text-xl font-black tracking-tight" style={{ color: 'var(--text-primary)' }}>{navItems.find(i => i.id === activeTab)?.label || 'Notifications'}</h1>
           </div>
           
           <div className="flex items-center gap-3">
              <ThemeToggle />
-              <button onClick={() => setActiveTab('Notifications')} className="p-2 relative hover:bg-white/5 rounded-xl transition-all group">
+              <button onClick={() => setActiveTab(NOTIFICATION_TABS.DEALER_NOTIFICATIONS)} className="p-2 relative hover:bg-white/5 rounded-xl transition-all group">
                <IconBell size={24} className={`group-hover:scale-110 transition-transform ${unreadCount > 0 ? 'animate-[blink_1s_ease-in-out_infinite] text-accent' : 'text-slate-400'}`} style={{ color: unreadCount > 0 ? 'var(--accent)' : 'var(--text-secondary)' }} />
                {unreadCount > 0 && <span className="absolute top-2 right-2 w-2.5 h-2.5 bg-orange-500 rounded-full border-2 border-white dark:border-slate-900" />}
               </button>

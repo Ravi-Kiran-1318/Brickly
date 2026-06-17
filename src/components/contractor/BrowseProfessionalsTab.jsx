@@ -5,16 +5,22 @@ import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
 import { 
   IconUsers, IconSearch, IconFilter, IconMapPin, 
-  IconCurrencyRupee, IconCalendar, IconCertificate, IconDownload
+  IconCurrencyRupee, IconCalendar, IconCertificate, IconDownload, IconCheck
 } from '@tabler/icons-react';
 
 const BrowseProfessionalsTab = () => {
   const [posts, setPosts] = useState([]);
+  const [jobs, setJobs] = useState([]);
+  const [hiredProfessionalIds, setHiredProfessionalIds] = useState(new Set());
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState({ jobRole: '', minExp: '', location: '' });
+  const [hireModalData, setHireModalData] = useState(null);
+  const [selectedJobId, setSelectedJobId] = useState('');
 
   useEffect(() => {
     fetchProfessionals();
+    fetchJobs();
+    fetchSentDirectHireRequests();
 
     const handleNewAvailability = (data) => {
       if (data.post) {
@@ -32,6 +38,18 @@ const BrowseProfessionalsTab = () => {
     };
   }, []);
 
+  const fetchSentDirectHireRequests = async () => {
+    try {
+      const res = await api.get('/api/contractor/direct-hire-requests/sent');
+      const hiredIds = res.data
+        .filter(req => ['Pending', 'Joined', 'Rejected'].includes(req.status))
+        .map(req => req.professionalId?._id || req.professionalId);
+      setHiredProfessionalIds(new Set(hiredIds));
+    } catch (err) {
+      console.error('Failed to fetch sent direct hire requests', err);
+    }
+  };
+
   const fetchProfessionals = async () => {
     setLoading(true);
     try {
@@ -45,18 +63,36 @@ const BrowseProfessionalsTab = () => {
     }
   };
 
-  const handleHire = async (post) => {
+  const fetchJobs = async () => {
+    try {
+      const res = await api.get('/api/contractor/jobs');
+      setJobs(res.data.filter(j => !j.isFilled));
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const openHireModal = (post) => {
     if (!post?.professionalId?._id) return toast.error("Professional details not found");
-    if (!window.confirm(`Send direct hire request to ${post.professionalId?.name}?`)) return;
+    setHireModalData(post);
+    setSelectedJobId('');
+  };
+
+  const handleConfirmHire = async () => {
+    const post = hireModalData;
+    if (!post) return;
     try {
       await api.post(`/api/contractor/direct-hire/${post.professionalId._id}`, {
         jobRole: post.jobRole,
         workSiteLocation: post.locationPreference,
         salary: post.expectedSalary,
-        duration: 'Long term'
+        duration: 'Long term',
+        jobPostId: selectedJobId || null
       });
-      toast.success("Direct hire request sent!");
-      fetchProfessionals();
+      toast.success("Direct hire request sent successfully");
+      setHiredProfessionalIds(prev => new Set([...prev, post.professionalId._id]));
+      setHireModalData(null);
+      // Removed fetchProfessionals() to not disrupt the UI, state handles it
     } catch (err) {
       toast.error(err.response?.data?.message || "Hiring failed");
     }
@@ -138,12 +174,21 @@ const BrowseProfessionalsTab = () => {
               <button className="flex-1 py-3 px-2 rounded-xl text-xs font-black bg-slate-50 dark:bg-slate-800 text-primary dark:text-white flex items-center justify-center gap-1.5 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 transition-all">
                 <IconDownload size={16} /> Resume
               </button>
-              <button 
-                onClick={() => handleHire(post)}
-                className="flex-[2] py-3 px-2 rounded-xl text-xs font-black bg-accent text-white flex items-center justify-center gap-1.5 shadow-lg shadow-orange-500/10 hover:bg-orange-600 transition-all"
-              >
-                Hire Now
-              </button>
+              {hiredProfessionalIds.has(post.professionalId?._id) ? (
+                <button 
+                  disabled
+                  className="flex-[2] py-3 px-2 rounded-xl text-xs font-black bg-green-500 text-white flex items-center justify-center gap-1.5 shadow-lg shadow-green-500/10 cursor-not-allowed opacity-90 transition-all"
+                >
+                  <IconCheck size={16} /> Hired
+                </button>
+              ) : (
+                <button 
+                  onClick={() => openHireModal(post)}
+                  className="flex-[2] py-3 px-2 rounded-xl text-xs font-black bg-accent text-white flex items-center justify-center gap-1.5 shadow-lg shadow-orange-500/10 hover:bg-orange-600 transition-all"
+                >
+                  Hire Now
+                </button>
+              )}
             </div>
           </motion.div>
         )) : (
@@ -156,6 +201,44 @@ const BrowseProfessionalsTab = () => {
           </div>
         )}
       </div>
+
+      {/* Hire Modal */}
+      {hireModalData && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setHireModalData(null)} />
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-white dark:bg-slate-900 w-full max-w-md rounded-[32px] p-8 relative z-10 shadow-2xl border border-slate-200 dark:border-slate-800"
+          >
+            <h3 className="text-2xl font-black text-primary dark:text-white mb-2">Direct Hire Request</h3>
+            <p className="text-slate-500 text-sm mb-6">Send a hire request to <strong className="text-primary dark:text-white">{hireModalData.professionalId?.name}</strong>.</p>
+            
+            <div className="space-y-4 mb-8">
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">Link to Job Post (Optional)</label>
+                <select 
+                  value={selectedJobId}
+                  onChange={(e) => setSelectedJobId(e.target.value)}
+                  className="w-full p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 font-bold text-primary dark:text-white outline-none focus:ring-4 focus:ring-accent/10 transition-all"
+                >
+                  <option value="">No specific job post</option>
+                  {jobs.map(job => (
+                    <option key={job._id} value={job._id}>
+                      {job.jobRole} ({job.workLocation})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="flex gap-4">
+               <button onClick={() => setHireModalData(null)} className="flex-1 py-3 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-xl font-bold uppercase tracking-widest text-xs hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">Cancel</button>
+               <button onClick={handleConfirmHire} className="flex-1 py-3 bg-accent text-white rounded-xl font-bold uppercase tracking-widest text-xs hover:bg-orange-600 transition-colors shadow-lg shadow-orange-500/20">Send Request</button>
+            </div>
+          </motion.div>
+        </div>
+      )}
     </div>
   );
 };

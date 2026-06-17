@@ -5,6 +5,7 @@ const Order = require('../models/Order');
 const Deal = require('../models/Deal');
 const Notification = require('../models/Notification');
 const { getIO } = require('../socket');
+const NOTIFICATION_TABS = require('../../shared/notificationConstants');
 
 // --- Dealer Discovery ---
 exports.getAllDealers = async (req, res) => {
@@ -75,7 +76,7 @@ exports.sendQuoteRequest = async (req, res) => {
       title: 'New Quote Request',
       message: 'A contractor has sent you a new quote request.',
       relatedId: quote._id,
-      actionTab: 'Quote Requests'
+      actionTab: NOTIFICATION_TABS.DEALER_QUOTE_REQUESTS
     });
     await notification.save();
 
@@ -173,7 +174,7 @@ exports.acceptQuote = async (req, res) => {
       type: 'Order',
       title: 'New Order Received',
       message: `${contractor.companyName || contractor.name} has confirmed an order.`,
-      actionTab: 'Orders'
+      actionTab: NOTIFICATION_TABS.DEALER_ORDERS
     });
     await notification.save();
 

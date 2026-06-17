@@ -11,6 +11,14 @@ const availabilityPostSchema = new mongoose.Schema({
   resumeUrl: { type: String },
   certificateUrls: [{ type: String }],
   isHired: { type: Boolean, default: false },
+  hiredSnapshot: {
+    contractorId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    contractorName: String,
+    companyName: String,
+    phone: String,
+    email: String,
+    hireDate: Date,
+  },
   createdAt: { type: Date, default: Date.now }
 });
 

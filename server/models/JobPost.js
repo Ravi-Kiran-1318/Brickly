@@ -19,6 +19,8 @@ const jobPostSchema = new mongoose.Schema({
     appliedAt: { type: Date, default: Date.now }
   }],
   isFilled: { type: Boolean, default: false },
+  status: { type: String, enum: ['Active', 'Filled', 'Expired'], default: 'Active' },
+  filledAt: { type: Date },
   workSiteLocation: {
     type: { type: String, default: 'Point' },
     coordinates: { type: [Number], index: '2dsphere' } // [longitude, latitude]

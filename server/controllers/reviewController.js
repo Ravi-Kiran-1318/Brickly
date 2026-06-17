@@ -2,6 +2,7 @@ const DealerReview = require('../models/DealerReview');
 const Order = require('../models/Order');
 const User = require('../models/User');
 const Notification = require('../models/Notification');
+const NOTIFICATION_TABS = require('../../shared/notificationConstants');
 
 // --- Helper to update dealer stats ---
 const updateDealerRatingStats = async (dealerId) => {
@@ -72,7 +73,7 @@ exports.submitReview = async (req, res) => {
       title: 'New Review Received',
       message: `You received a new verified review from ${order.contractorId.companyName || order.contractorId.name}.`,
       type: 'General',
-      actionTab: 'Reviews'
+      actionTab: NOTIFICATION_TABS.DEALER_OVERVIEW
     });
     await notification.save();
     if (io) {
@@ -117,7 +118,7 @@ exports.replyToReview = async (req, res) => {
       title: 'Dealer Replied to Your Review',
       message: `${review.dealerId.shopName} replied to your review.`,
       type: 'General',
-      actionTab: 'Orders'
+      actionTab: NOTIFICATION_TABS.CONTRACTOR_ORDERS
     });
     await notification.save();
     io.to(`user:${review.contractorId}`).emit('contractor:reviewReplyReceived', notification);

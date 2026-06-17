@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import api from '../../api';
+import socket from '../../socket';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
 import { 
@@ -39,6 +40,16 @@ const JobPostsTab = () => {
 
   useEffect(() => {
     fetchJobs();
+
+    const handleJobPostDeleted = (data) => {
+      setJobs(prev => prev.filter(job => job._id !== data.jobPostId));
+    };
+
+    socket.on('jobPostDeleted', handleJobPostDeleted);
+
+    return () => {
+      socket.off('jobPostDeleted', handleJobPostDeleted);
+    };
   }, []);
 
   const fetchJobs = async () => {

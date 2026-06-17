@@ -8,6 +8,7 @@ import {
 } from '@tabler/icons-react';
 import { useAuth } from '../../context/AuthContext';
 import { toast } from 'react-hot-toast';
+import ResignationModal from './ResignationModal';
 
 const ROLE_HIERARCHY = {
   'Plumber': [
@@ -112,7 +113,7 @@ const ROLE_HIERARCHY = {
   ]
 };
 
-const AvailabilityTab = () => {
+const AvailabilityTab = ({ directHireRequests, setDirectHireRequests }) => {
   const { user } = useAuth();
   const [profile, setProfile] = useState(user);
   const [post, setPost] = useState(null);
@@ -137,7 +138,6 @@ const AvailabilityTab = () => {
   const [skillInput, setSkillInput] = useState('');
 
   // Features State
-  const [directHireRequests, setDirectHireRequests] = useState([]);
   const [rejectingId, setRejectingId] = useState(null); // id of direct hire request being rejected
   const [rejectionReason, setRejectionReason] = useState('');
   const [rejectLoading, setRejectLoading] = useState(false);
@@ -154,26 +154,87 @@ const AvailabilityTab = () => {
 
   useEffect(() => {
     fetchProfileAndAvailability();
-    fetchDirectHireRequests();
     fetchNotifications();
+    fetchWorkingStatus();
   }, [user]);
+
+  const [workingStatus, setWorkingStatus] = useState({ isWorking: false, contractorName: '' });
+  const [myPosts, setMyPosts] = useState([]);
+
+  useEffect(() => {
+    api.get('/api/professional/my-availability').then(res => {
+      if (res.data?.success) setMyPosts(res.data.data);
+    }).catch(console.error);
+  }, []);
+
+  const fetchWorkingStatus = async () => {
+    try {
+      if (!user?.currentContractorId) return;
+      const resApps = await api.get('/api/professional/applications');
+      const resDirect = await api.get('/api/professional/direct-hire-requests');
+      const apps = [...resApps.data, ...resDirect.data];
+      const joinedApp = apps.find(a => ['Joined', 'ResignationPending', 'ResignationAccepted'].includes(a.status));
+      if (joinedApp) {
+        setWorkingStatus({
+          isWorking: true,
+          contractorName: joinedApp.contractorId?.companyName || joinedApp.contractorId?.name || 'Contractor'
+        });
+      }
+    } catch (err) { console.error('Failed to fetch working status', err); }
+  };
 
   const fetchNotifications = async () => {
     try {
-      const res = await api.get('/api/notifications');
-      const stayNotif = res.data.find(n => n.title === 'Contractor Wants You to Stay' && !n.isRead);
+      const res = await api.get('/api/professional/notifications');
+      const stayNotif = res.data.find(n => n.title === 'Your Contractor Wants You to Stay' && !n.isRead);
       if (stayNotif) {
         setRequestStayMessage(stayNotif.message);
+      } else {
+        setRequestStayMessage(null);
       }
     } catch (err) { console.error('Failed to fetch notifications:', err); }
   };
 
-  const fetchDirectHireRequests = async () => {
+  const [daysRemaining, setDaysRemaining] = useState(0);
+  const [timeRemaining, setTimeRemaining] = useState({ h: 0, m: 0, s: 0 });
+
+  useEffect(() => {
+    if (user?.isServingNotice && user?.noticeEndDate) {
+      const interval = setInterval(() => {
+        const now = new Date().getTime();
+        const end = new Date(user.noticeEndDate).getTime();
+        const distance = end - now;
+
+        if (distance < 0) {
+          clearInterval(interval);
+          setDaysRemaining(0);
+          setTimeRemaining({ h: 0, m: 0, s: 0 });
+          return;
+        }
+
+        setDaysRemaining(Math.floor(distance / (1000 * 60 * 60 * 24)));
+        setTimeRemaining({
+          h: Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60)),
+          m: Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60)),
+          s: Math.floor((distance % (1000 * 60)) / 1000)
+        });
+      }, 1000);
+      return () => clearInterval(interval);
+    }
+  }, [user]);
+
+  const handleStayResponse = async (responseType) => {
     try {
-      const res = await api.get('/api/professional/direct-hire-requests');
-      setDirectHireRequests(res.data);
-    } catch (err) { console.error('Failed to fetch direct hire requests:', err); }
+      await api.post('/api/professional/request-to-stay/respond', { response: responseType });
+      toast.success('Your response has been sent to the contractor.');
+      setRequestStayMessage(null);
+      // Force reload to update global user state
+      window.location.reload();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to send response');
+    }
   };
+
 
   const fetchProfileAndAvailability = async () => {
     try {
@@ -312,29 +373,97 @@ const AvailabilityTab = () => {
 
   return (
     <div className="space-y-8">
-      {/* Request to Stay Banner */}
-      {requestStayMessage && (
+      {/* Employed Banner (When working but not serving notice) */}
+      {workingStatus.isWorking && !user?.isServingNotice && (
         <motion.div 
           initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}
-          className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-3xl p-6 flex flex-col md:flex-row items-center gap-4 justify-between"
+          className="bg-orange-50 dark:bg-orange-900/10 border-2 border-orange-500 rounded-3xl p-6 flex items-center justify-between shadow-lg shadow-orange-500/10"
         >
-          <div className="flex items-start gap-4">
-            <div className="w-12 h-12 bg-blue-100 dark:bg-blue-900/40 rounded-2xl flex items-center justify-center text-blue-600 shrink-0">
-              <IconAlertTriangle size={24} />
-            </div>
-            <div>
-              <h3 className="font-black text-blue-900 dark:text-blue-100 mb-1">Contractor Requested You to Stay</h3>
-              <p className="text-sm font-bold text-blue-700 dark:text-blue-300">{requestStayMessage}</p>
-            </div>
+          <div>
+            <h3 className="font-black text-xl text-orange-800 dark:text-orange-400 mb-1">
+              You are currently employed by {workingStatus.contractorName}
+            </h3>
+            <p className="text-sm font-bold text-orange-600 dark:text-orange-300">
+              Role: {user?.currentJobRole || user?.jobRole || 'Professional'}
+            </p>
           </div>
           <button 
-            onClick={() => setRequestStayMessage(null)} 
-            className="px-6 py-2.5 bg-blue-600 text-white font-black rounded-xl hover:bg-blue-700 transition-all text-sm shrink-0"
+            onClick={() => setIsResignModalOpen(true)}
+            className="bg-red-500 hover:bg-red-600 text-white px-6 py-3 rounded-2xl font-black transition-all shadow-md active:scale-95 flex items-center gap-2"
           >
-            Acknowledge
+            Submit Resignation
           </button>
         </motion.div>
       )}
+
+      {/* History of Availability Posts */}
+      {myPosts.length > 0 && (
+        <div className="space-y-4">
+          <h2 className="text-2xl font-black text-primary dark:text-white">Availability Post History</h2>
+          <div className="grid grid-cols-1 gap-4">
+            {myPosts.map(post => (
+              <div key={post._id} className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
+                <div className="flex justify-between items-start mb-4">
+                  <h3 className="font-black text-lg text-primary dark:text-white">{post.jobRole}</h3>
+                  <span className={`px-3 py-1 rounded-full text-xs font-bold ${post.isHired ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>
+                    {post.isHired ? 'Hired ✓' : 'Active — Available'}
+                  </span>
+                </div>
+                {post.isHired && post.hiredSnapshot && (
+                  <div className="mt-4 p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-700">
+                    <p className="text-[10px] font-black uppercase text-slate-400 mb-1">Hired By</p>
+                    <p className="text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">{post.hiredSnapshot.companyName || post.hiredSnapshot.contractorName}</p>
+                    <p className="text-xs text-slate-500 mb-2">{post.hiredSnapshot.phone} · {post.hiredSnapshot.email}</p>
+                    <p className="text-[10px] font-bold text-slate-400">Hired on {new Date(post.hiredSnapshot.hireDate || post.createdAt).toLocaleDateString('en-IN')}</p>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Notice Period Banner */}
+      {user?.isServingNotice && (
+        <motion.div 
+          initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}
+          className="bg-orange-500 rounded-3xl p-6 text-white shadow-lg shadow-orange-500/20"
+        >
+          <div className="flex items-start gap-4">
+            <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center shrink-0">
+              <IconAlertTriangle size={24} />
+            </div>
+            <div className="flex-1">
+              <h3 className="font-black text-xl mb-1">You are currently serving a notice period.</h3>
+              <p className="text-sm font-bold text-orange-100 mb-4">
+                {daysRemaining} days, {timeRemaining.h}h {timeRemaining.m}m {timeRemaining.s}s remaining
+              </p>
+              
+              {requestStayMessage && (
+                <div className="bg-white/10 rounded-2xl p-4 mt-4 border border-white/20">
+                  <h4 className="font-black text-white mb-2">Request to Stay</h4>
+                  <p className="text-sm text-orange-100 font-medium mb-4">"{requestStayMessage}"</p>
+                  <div className="flex gap-3">
+                    <button 
+                      onClick={() => handleStayResponse('accept')}
+                      className="px-6 py-2.5 bg-green-500 hover:bg-green-600 text-white font-black rounded-xl transition-all text-sm"
+                    >
+                      Accept Request to Stay
+                    </button>
+                    <button 
+                      onClick={() => handleStayResponse('decline')}
+                      className="px-6 py-2.5 border-2 border-white/30 hover:bg-white/10 text-white font-black rounded-xl transition-all text-sm"
+                    >
+                      Decline
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </motion.div>
+      )}
+
 
       {/* Direct Hire Requests Section */}
       {directHireRequests.length > 0 && (
@@ -342,7 +471,7 @@ const AvailabilityTab = () => {
           <h2 className="text-2xl font-black text-primary dark:text-white">Direct Hire Requests</h2>
           <div className="grid grid-cols-1 gap-4">
             {directHireRequests.map(req => (
-              <div key={req._id} className={`bg-white dark:bg-slate-900 rounded-[24px] border ${req.status === 'Rejected' ? 'border-red-200 dark:border-red-900/50 opacity-75' : 'border-slate-200 dark:border-slate-800'} p-6 shadow-sm overflow-hidden`}>
+              <div key={req._id} id={`request-${req._id}`} className={`bg-white dark:bg-slate-900 rounded-[24px] border ${req.status === 'Rejected' ? 'border-red-200 dark:border-red-900/50 opacity-75' : 'border-slate-200 dark:border-slate-800'} p-6 shadow-sm overflow-hidden`}>
                 <div className="flex justify-between items-start mb-4">
                   <div>
                     <h3 className="text-lg font-black text-primary dark:text-white">{req.contractorId?.companyName || req.contractorId?.name}</h3>
@@ -450,11 +579,15 @@ const AvailabilityTab = () => {
         
         <button 
           onClick={handleToggleVisibility}
+          disabled={user?.isServingNotice}
           className={`flex items-center gap-3 px-8 py-4 rounded-2xl font-black transition-all ${
-            isAvailable 
-              ? 'bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500 hover:text-white' 
-              : 'bg-green-500 text-white hover:shadow-lg shadow-green-500/20 hover:-translate-y-1'
+            user?.isServingNotice 
+              ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200' 
+              : isAvailable 
+                ? 'bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500 hover:text-white' 
+                : 'bg-green-500 text-white hover:shadow-lg shadow-green-500/20 hover:-translate-y-1'
           }`}
+          title={user?.isServingNotice ? "Cannot change availability during notice period" : ""}
         >
           {isAvailable ? 'Go Offline' : 'Go Online'}
         </button>
@@ -529,7 +662,8 @@ const AvailabilityTab = () => {
 
          {/* Right: Form Section */}
          <div className="lg:col-span-2">
-            <AnimatePresence>
+            {!user?.isServingNotice ? (
+              <AnimatePresence>
                {isFormOpen && (
                  <motion.div 
                    initial={{ opacity: 0, x: 20 }}
@@ -648,6 +782,13 @@ const AvailabilityTab = () => {
                  </motion.div>
                )}
             </AnimatePresence>
+            ) : (
+              <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-[40px] p-8 text-center text-orange-800 dark:text-orange-200 flex flex-col items-center justify-center h-full">
+                <IconAlertTriangle size={64} className="mb-4 opacity-50" />
+                <h3 className="text-2xl font-black mb-2">Form Disabled</h3>
+                <p className="font-bold">You cannot post availability while serving a notice period.</p>
+              </div>
+            )}
          </div>
       </div>
 
@@ -672,73 +813,13 @@ const AvailabilityTab = () => {
         )}
       </AnimatePresence>
 
-      {/* Resignation Modal */}
-      <AnimatePresence>
-        {isResignModalOpen && (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="bg-white dark:bg-slate-900 rounded-[32px] max-w-lg w-full p-8 shadow-2xl border border-slate-200 dark:border-slate-800">
-              <h2 className="text-2xl font-black text-primary dark:text-white mb-4">Submit Resignation</h2>
-              <p className="text-slate-500 font-medium mb-6">You are required to give a minimum of 7 days notice before resignation. Your last working date will be {new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toLocaleDateString()}.</p>
-              
-              <div className="space-y-4 mb-8">
-                <div>
-                  <label className="block text-xs font-black uppercase text-slate-400 mb-2">Reason</label>
-                  <select 
-                    value={resignData.reason} 
-                    onChange={(e) => setResignData({ ...resignData, reason: e.target.value })}
-                    className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-2xl p-4 focus:ring-2 focus:ring-accent transition-all dark:text-white font-bold"
-                  >
-                    <option value="">Select a reason</option>
-                    <option value="Better Opportunity">Better Opportunity</option>
-                    <option value="Personal Reasons">Personal Reasons</option>
-                    <option value="Salary Dissatisfaction">Salary Dissatisfaction</option>
-                    <option value="Work Condition Issues">Work Condition Issues</option>
-                    <option value="Relocation">Relocation</option>
-                    <option value="Project Completed">Project Completed</option>
-                    <option value="Other">Other</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-black uppercase text-slate-400 mb-2">Additional Comments (Optional)</label>
-                  <textarea 
-                    value={resignData.comments} 
-                    onChange={(e) => setResignData({ ...resignData, comments: e.target.value.slice(0, 300) })}
-                    placeholder="Any additional details you want to share..."
-                    className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-2xl p-4 focus:ring-2 focus:ring-accent transition-all dark:text-white font-medium resize-none h-24"
-                  />
-                  <div className="text-right text-xs font-bold text-slate-400 mt-1">{resignData.comments.length}/300</div>
-                </div>
-              </div>
-
-              <div className="flex gap-4">
-                <button onClick={() => setIsResignModalOpen(false)} className="flex-1 py-4 rounded-2xl font-black text-slate-500 hover:bg-slate-100 transition-all">Cancel</button>
-                <button 
-                  onClick={async () => {
-                    if (!resignData.reason) return toast.error('Please select a reason.');
-                    setResignLoading(true);
-                    try {
-                      await api.post('/api/professional/resign', { 
-                        directHireRequestId: activeJoinId, 
-                        resignationReason: resignData.reason, 
-                        additionalComments: resignData.comments 
-                      });
-                      toast.success('Resignation submitted successfully.');
-                      setIsResignModalOpen(false);
-                      fetchDirectHireRequests();
-                    } catch (err) { toast.error(err.response?.data?.message || 'Failed to submit resignation'); }
-                    finally { setResignLoading(false); }
-                  }} 
-                  disabled={resignLoading || !resignData.reason} 
-                  className="flex-1 bg-red-500 hover:bg-red-600 text-white py-4 rounded-2xl font-black transition-all flex items-center justify-center gap-2 disabled:opacity-50"
-                >
-                  {resignLoading ? <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span> : 'Submit Resignation'}
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
+      <ResignationModal
+        isOpen={isResignModalOpen}
+        onClose={() => setIsResignModalOpen(false)}
+        contractorName={workingStatus.contractorName}
+        jobRole={user?.currentJobRole || user?.jobRole || 'Professional'}
+        onSuccess={() => window.location.reload()}
+      />
     </div>
   );
 };

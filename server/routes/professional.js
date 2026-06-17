@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const professionalController = require('../controllers/professionalController');
 const { auth, requireRole } = require('../middleware/auth');
+const { checkNoticeBlock } = require('../middleware/noticeBlock');
 const upload = require('../middleware/upload');
 
 // All routes require professional role
@@ -12,14 +13,17 @@ router.use(requireRole('professional'));
 router.get('/profile', professionalController.getProfile);
 router.put('/profile', professionalController.updateProfile);
 router.get('/stats', professionalController.getStats);
+router.get('/working-status', professionalController.getWorkingStatus);
 
 // Job Feed
 router.get('/jobs', professionalController.getJobs);
-router.post('/jobs/:id/apply', professionalController.applyToJob);
+router.post('/jobs/:id/apply', checkNoticeBlock, professionalController.applyToJob);
 
 // Availability
+router.get('/my-availability', professionalController.getMyAvailabilityPosts);
 router.get('/availability', professionalController.getAvailability);
-router.post('/availability', 
+router.post('/availability',
+  checkNoticeBlock,
   (req, res, next) => { req.uploadFolder = 'resumes'; next(); },
   upload.fields([
     { name: 'resume', maxCount: 1 },
@@ -45,11 +49,13 @@ router.put('/applications/:id/reject', professionalController.rejectApplication)
 
 // Direct Hire Requests
 router.get('/direct-hire-requests', professionalController.getDirectHireRequests);
-router.put('/direct-hire-requests/:id/join', professionalController.joinDirectHire);
+router.put('/direct-hire-requests/:id/join', checkNoticeBlock, professionalController.joinDirectHire);
 router.put('/direct-hire-requests/:id/reject', professionalController.rejectDirectHire);
 
-// Resignation
+// Resignation & Notice Period
 router.post('/resign', professionalController.submitResignation);
+router.post('/request-to-stay/respond', professionalController.respondToStayRequest);
+router.get('/notice-status', professionalController.getNoticeStatus);
 
 // Reviews
 const profReviewController = require('../controllers/professionalReviewController');

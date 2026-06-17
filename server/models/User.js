@@ -31,6 +31,7 @@ const userSchema = new mongoose.Schema({
   companyName: { type: String },
   yearsInBusiness: { type: Number },
   specialization: { type: String },
+  hiredProfessionals: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
 
   // Dealer specific
   shopName: { type: String },
@@ -58,6 +59,15 @@ const userSchema = new mongoose.Schema({
   phoneVerified: { type: Boolean, default: false },
   phoneOtp: { type: String },
   phoneOtpExpiry: { type: Date },
+  
+  // Resignation & Notice Period fields
+  isServingNotice: { type: Boolean, default: false },
+  noticeStartDate: { type: Date, default: null },
+  noticeEndDate: { type: Date, default: null },
+  currentContractorId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+  currentJobRole: { type: String, default: null },
+  resignationReason: { type: String, default: null },
+
   createdAt: { type: Date, default: Date.now }
 });
 

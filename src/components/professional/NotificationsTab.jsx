@@ -58,6 +58,18 @@ const NotificationsTab = ({ setUnreadCount, setActiveTab }) => {
       }
       if (notification.actionTab && setActiveTab) {
         setActiveTab(notification.actionTab);
+        if (notification.relatedId) {
+          setTimeout(() => {
+            const element = document.getElementById(`request-${notification.relatedId}`) || document.getElementById(`job-${notification.relatedId}`);
+            if (element) {
+              element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              element.classList.add('ring-4', 'ring-accent', 'ring-offset-4', 'dark:ring-offset-slate-900', 'transition-all', 'duration-500');
+              setTimeout(() => {
+                element.classList.remove('ring-4', 'ring-accent', 'ring-offset-4', 'dark:ring-offset-slate-900');
+              }, 3000);
+            }
+          }, 300);
+        }
       }
     } catch (err) {
       console.error(err);

@@ -9,7 +9,7 @@ import {
   IconCalendarTime, IconCurrencyRupee, IconCircleCheck, 
   IconX, IconClock, IconEye, IconUserCircle, IconMapRoute, 
   IconAlertCircle, IconHandStop, IconPlayerPlay, IconRefresh,
-  IconBriefcase
+  IconBriefcase, IconDoorExit
 } from '@tabler/icons-react';
 
 const RouteMap = lazy(() => import('./RouteMap'));
@@ -138,12 +138,12 @@ const ApplicationsTab = ({ openMapJobId, setOpenMapJobId }) => {
   const handleResignSubmit = async (applicationId, resignData) => {
     try {
       await api.post('/api/professional/resign', { 
-        applicationId, 
-        resignationReason: resignData.reason, 
-        additionalComments: resignData.comments 
+        reason: resignData.reason
       });
-      toast.success('Resignation submitted successfully.');
-      fetchApplications();
+      toast.success('Resignation submitted. You are now serving a 7-day notice period.');
+      setApplications(prev => prev.map(app => app._id === applicationId ? { ...app, status: 'Resigned' } : app));
+      // Force reload to get updated user state with isServingNotice
+      window.location.reload();
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to submit resignation');
       throw err;
@@ -284,7 +284,7 @@ const ApplicationCard = ({ application, user, openMapJobId, setOpenMapJobId, onJ
   const [rejectLoading, setRejectLoading] = useState(false);
 
   const [isResignModalOpen, setIsResignModalOpen] = useState(false);
-  const [resignData, setResignData] = useState({ reason: '', comments: '' });
+  const [resignData, setResignData] = useState({ reason: '' });
   const [resignLoading, setResignLoading] = useState(false);
 
   if (!job) return null;
@@ -372,15 +372,30 @@ const ApplicationCard = ({ application, user, openMapJobId, setOpenMapJobId, onJ
                 >
                   <IconX size={16} /> Reject
                 </button>
+                {user?.isServingNotice ? (
+                  <button 
+                    disabled
+                    className="flex items-center gap-2 text-xs font-black px-6 py-2.5 rounded-xl bg-slate-100 text-slate-400 cursor-not-allowed"
+                  >
+                    <IconClock size={16} /> Notice Period Active
+                  </button>
+                ) : (
+                  <button 
+                    onClick={() => setIsResignModalOpen(true)}
+                    className="flex items-center gap-2 text-xs font-black px-6 py-2.5 rounded-xl border border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300 transition-all"
+                  >
+                    <IconDoorExit size={16} /> Resign from this Job
+                  </button>
+                )}
               </>
             )}
 
-            {application.status === 'Joined' && (
+            {application.status === 'Joined' && !user?.isServingNotice && (
               <button 
                 onClick={() => setIsResignModalOpen(true)}
                 className="flex items-center gap-2 text-xs font-black px-6 py-2.5 rounded-xl bg-slate-100 text-slate-600 hover:bg-red-100 hover:text-red-600 transition-all"
               >
-                Resign from this Position
+                <IconDoorExit size={16} /> Resign from this Position
               </button>
             )}
          </div>
@@ -447,44 +462,39 @@ const ApplicationCard = ({ application, user, openMapJobId, setOpenMapJobId, onJ
         {isResignModalOpen && (
           <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
             <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="bg-white dark:bg-slate-900 rounded-[32px] max-w-lg w-full p-8 shadow-2xl border border-slate-200 dark:border-slate-800">
-              <h2 className="text-2xl font-black text-primary dark:text-white mb-4">Submit Resignation</h2>
-              <p className="text-slate-500 font-medium mb-6">You are required to give a minimum of 7 days notice before resignation. Your last working date will be {new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toLocaleDateString()}.</p>
+              <h2 className="text-2xl font-black text-primary dark:text-white mb-2">Submit Resignation</h2>
+              
+              <div className="bg-slate-50 dark:bg-slate-800 p-4 rounded-xl border border-slate-100 dark:border-slate-700 mb-6">
+                <p className="text-sm font-bold text-slate-700 dark:text-slate-300">{contractor?.companyName || contractor?.name}</p>
+                <p className="text-sm font-medium text-slate-500">{job.jobRole}</p>
+                <p className="text-xs text-slate-400 mt-1 flex items-center gap-1"><IconMapPin size={12}/>{job.workLocation}</p>
+              </div>
+
+              <div className="bg-orange-100 border border-orange-200 p-4 rounded-2xl mb-6">
+                <p className="text-orange-800 font-bold text-sm">
+                  ⚠️ You will serve a mandatory 7-day notice period. During this time you cannot apply to or accept any new jobs.
+                </p>
+              </div>
               
               <div className="space-y-4 mb-8">
                 <div>
-                  <label className="block text-xs font-black uppercase text-slate-400 mb-2">Reason</label>
-                  <select 
-                    value={resignData.reason} 
-                    onChange={(e) => setResignData({ ...resignData, reason: e.target.value })}
-                    className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-2xl p-4 focus:ring-2 focus:ring-accent transition-all dark:text-white font-bold"
-                  >
-                    <option value="">Select a reason</option>
-                    <option value="Better Opportunity">Better Opportunity</option>
-                    <option value="Personal Reasons">Personal Reasons</option>
-                    <option value="Salary Dissatisfaction">Salary Dissatisfaction</option>
-                    <option value="Work Condition Issues">Work Condition Issues</option>
-                    <option value="Relocation">Relocation</option>
-                    <option value="Project Completed">Project Completed</option>
-                    <option value="Other">Other</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-black uppercase text-slate-400 mb-2">Additional Comments (Optional)</label>
+                  <label className="block text-xs font-black uppercase text-slate-400 mb-2">Reason for Resignation</label>
                   <textarea 
-                    value={resignData.comments} 
-                    onChange={(e) => setResignData({ ...resignData, comments: e.target.value.slice(0, 300) })}
-                    placeholder="Any additional details you want to share..."
-                    className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-2xl p-4 focus:ring-2 focus:ring-accent transition-all dark:text-white font-medium resize-none h-24"
+                    value={resignData.reason} 
+                    onChange={(e) => setResignData({ reason: e.target.value.slice(0, 300) })}
+                    placeholder="Please provide your reason for resigning (minimum 20 characters)..."
+                    className={`w-full bg-slate-50 dark:bg-slate-800 border-2 rounded-2xl p-4 focus:ring-accent transition-all dark:text-white font-medium resize-none h-32 ${resignData.reason.length > 0 && resignData.reason.length < 20 ? 'border-red-400' : 'border-transparent'}`}
                   />
-                  <div className="text-right text-xs font-bold text-slate-400 mt-1">{resignData.comments.length}/300</div>
+                  <div className={`text-right text-xs font-bold mt-1 ${resignData.reason.length < 20 ? 'text-red-400' : 'text-slate-400'}`}>
+                    {resignData.reason.length}/300 characters
+                  </div>
                 </div>
               </div>
 
               <div className="flex gap-4">
-                <button onClick={() => setIsResignModalOpen(false)} className="flex-1 py-4 rounded-2xl font-black text-slate-500 hover:bg-slate-100 transition-all">Cancel</button>
+                <button onClick={() => setIsResignModalOpen(false)} className="flex-1 py-4 rounded-2xl font-black text-slate-500 hover:bg-slate-100 border border-slate-200 transition-all">Cancel</button>
                 <button 
                   onClick={async () => {
-                    if (!resignData.reason) return toast.error('Please select a reason.');
                     setResignLoading(true);
                     try {
                       await onResign(application._id, resignData);
@@ -492,10 +502,10 @@ const ApplicationCard = ({ application, user, openMapJobId, setOpenMapJobId, onJ
                     } catch (err) { }
                     finally { setResignLoading(false); }
                   }} 
-                  disabled={resignLoading || !resignData.reason} 
+                  disabled={resignLoading || resignData.reason.length < 20} 
                   className="flex-1 bg-red-500 hover:bg-red-600 text-white py-4 rounded-2xl font-black transition-all flex items-center justify-center gap-2 disabled:opacity-50"
                 >
-                  {resignLoading ? <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span> : 'Submit Resignation'}
+                  {resignLoading ? <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span> : 'Confirm Resignation'}
                 </button>
               </div>
             </motion.div>

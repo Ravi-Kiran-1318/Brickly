@@ -19,8 +19,7 @@ api.interceptors.response.use(
   (error) => {
     if (error.response && error.response.status === 401) {
       // Clear storage
-      localStorage.removeItem('buildr_token');
-      localStorage.removeItem('buildr_user');
+      localStorage.clear();
       setAuthToken(null);
       // Only redirect if not already on the login page to avoid infinite redirect loops
       if (window.location.pathname !== '/login') {

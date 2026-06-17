@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const directHireRequestSchema = new mongoose.Schema({
   contractorId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   professionalId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  jobPostId: { type: mongoose.Schema.Types.ObjectId, ref: 'JobPost', default: null },
   jobRole: { type: String, required: true },
   workSiteLocation: { type: String },
   salary: { type: String },
