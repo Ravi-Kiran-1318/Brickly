@@ -14,6 +14,9 @@ const ApplicantProfileModal = ({ isOpen, onClose, applicant, jobId, onHire, onSh
   const prof = applicant.professionalId;
   const isHired = applicant.status === 'Hired';
   const isShortlisted = applicant.status === 'Shortlisted';
+  const isServingNotice = prof?.isServingNotice;
+  const isEmployed = prof?.isEmployed;
+  const noticeEndDate = prof?.noticeEndDate;
 
   const handleAction = async (actionFn, actionName) => {
     setLoadingAction(actionName);
@@ -157,11 +160,34 @@ const ApplicantProfileModal = ({ isOpen, onClose, applicant, jobId, onHire, onSh
               </button>
             )}
 
+            {isServingNotice && !isHired && (
+              <div className="flex-1 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 p-3 rounded-2xl flex items-center gap-2">
+                <span className="text-yellow-600">⚠️</span>
+                <p className="text-xs font-bold text-yellow-600">
+                  Notice period ends {new Date(noticeEndDate).toLocaleDateString()}. Hire unavailable.
+                </p>
+              </div>
+            )}
+            
+            {isEmployed && !isServingNotice && !isHired && (
+              <div className="flex-1 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 p-3 rounded-2xl flex items-center gap-2">
+                <span className="text-slate-400"><IconBriefcase size={16} /></span>
+                <p className="text-xs font-bold text-slate-500">
+                  Candidate is currently employed by another contractor. Hire unavailable.
+                </p>
+              </div>
+            )}
+
             {!isHired && (
               <button 
                 onClick={() => handleAction(onHire, 'hire')}
-                disabled={loadingAction !== null}
-                className="px-8 py-3 rounded-2xl font-black bg-green-500 text-white hover:bg-green-600 transition-all flex items-center gap-2 shadow-lg shadow-green-500/20"
+                disabled={loadingAction !== null || isServingNotice || isEmployed}
+                title={isServingNotice ? `Serving notice until ${new Date(noticeEndDate).toLocaleDateString()}. Cannot hire until complete.` : isEmployed ? "Candidate is already employed elsewhere." : ""}
+                className={`px-8 py-3 rounded-2xl font-black transition-all flex items-center gap-2 shadow-lg ${
+                  (isServingNotice || isEmployed)
+                    ? 'bg-slate-300 dark:bg-slate-700 text-slate-500 cursor-not-allowed shadow-none' 
+                    : 'bg-green-500 text-white hover:bg-green-600 shadow-green-500/20'
+                }`}
               >
                 {loadingAction === 'hire' ? <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span> : null}
                 Hire Professional

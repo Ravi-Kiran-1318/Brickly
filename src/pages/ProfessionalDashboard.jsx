@@ -100,6 +100,11 @@ const ProfessionalDashboard = () => {
         toast.success("Your notice period has ended. You can now apply for new jobs.", { icon: "✅" });
       });
 
+      socket.on('professional:newReview', (data) => {
+        setUnreadCount(prev => prev + 1);
+        toast.success(`You received a ${data.rating}-star review from ${data.contractorId?.companyName || data.contractorId?.name}!`, { icon: "⭐" });
+      });
+
       return () => {
         socket.off('professional:applicationUpdate');
         socket.off('professional:hiredDirectly');
@@ -107,6 +112,7 @@ const ProfessionalDashboard = () => {
         socket.off('professional:newJob');
         socket.off('professional:requestToStay');
         socket.off('professional:noticeEnded');
+        socket.off('professional:newReview');
         socket.off('newDirectHireRequest');
         socket.disconnect();
       };

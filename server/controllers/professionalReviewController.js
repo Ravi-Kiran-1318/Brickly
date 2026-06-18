@@ -2,6 +2,9 @@ const ProfessionalReview = require('../models/ProfessionalReview');
 const HiredWorker = require('../models/HiredWorker');
 const Application = require('../models/Application');
 const User = require('../models/User');
+const Notification = require('../models/Notification');
+const { getIO } = require('../socket');
+const NOTIFICATION_TABS = require('../../shared/notificationConstants');
 
 // Contractor leaves a review for a professional
 exports.createReview = async (req, res) => {
@@ -51,6 +54,20 @@ exports.createReview = async (req, res) => {
 
     const populated = await ProfessionalReview.findById(review._id)
       .populate('contractorId', 'name companyName');
+
+    const contractorName = populated.contractorId.companyName || populated.contractorId.name;
+
+    const notification = new Notification({
+      userId: professionalId,
+      title: 'New Review Received',
+      message: `${contractorName} has left you a ${rating}-star review: "${title}"`,
+      type: 'General',
+      actionTab: NOTIFICATION_TABS.PROFESSIONAL_MY_REVIEWS || 'reviews'
+    });
+    await notification.save();
+
+    const io = getIO();
+    io.to(`user:${professionalId}`).emit('professional:newReview', populated);
 
     res.status(201).json(populated);
   } catch (error) {

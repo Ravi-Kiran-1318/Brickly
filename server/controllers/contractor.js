@@ -53,13 +53,18 @@ exports.getStats = async (req, res) => {
 
 exports.getTeam = async (req, res) => {
   try {
-    const workers = await HiredWorker.find({ contractorId: req.user.id, status: 'Active' })
-      .populate('professionalId', 'name phone email jobRole yearsOfExperience locationPreference about isServingNotice noticeEndDate resignationReason isAvailable');
+    const workers = await HiredWorker.find({ 
+      contractorId: req.user.id, 
+      status: { $in: ['Active', 'ResignationPending', 'ResignationAccepted'] } 
+    }).populate('professionalId', 'name phone email jobRole yearsOfExperience locationPreference about isAvailable');
     
     // Map to array of User objects so frontend logic works seamlessly
     const team = workers.filter(w => w.professionalId).map(w => {
       const user = w.professionalId.toObject();
-      user.hiredWorkerId = w._id; // Include the HiredWorker ID just in case
+      user.hiredWorkerId = w._id;
+      user.isServingNotice = ['ResignationPending', 'ResignationAccepted'].includes(w.status);
+      user.resignationReason = w.resignationReason;
+      user.noticeEndDate = w.lastWorkingDate;
       return user;
     });
 

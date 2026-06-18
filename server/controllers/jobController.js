@@ -83,10 +83,35 @@ exports.createJob = async (req, res) => {
 };
 
 exports.getMyJobs = async (req, res) => {
+  const HiredWorker = require('../models/HiredWorker');
   const jobs = await JobPost.find({ contractorId: req.user.id })
-    .populate('applicants.professionalId', 'name phone email jobRole yearsOfExperience locationPreference qualification about')
+    .populate('applicants.professionalId', 'name phone email jobRole yearsOfExperience locationPreference qualification about isServingNotice noticeEndDate')
     .sort({ createdAt: -1 });
-  res.json(jobs);
+
+  // Map over applicants and append active notice status from HiredWorker dynamically
+  const jobsWithStatus = await Promise.all(jobs.map(async (job) => {
+    const jobObj = job.toObject();
+    jobObj.applicants = await Promise.all(jobObj.applicants.map(async (applicant) => {
+      if (applicant.professionalId) {
+        const activeWorker = await HiredWorker.findOne({ 
+          professionalId: applicant.professionalId._id,
+          status: { $in: ['Active', 'ResignationPending', 'ResignationAccepted'] }
+        });
+        
+        if (activeWorker) {
+          applicant.professionalId.isEmployed = activeWorker.status === 'Active';
+          applicant.professionalId.isServingNotice = ['ResignationPending', 'ResignationAccepted'].includes(activeWorker.status);
+          if (applicant.professionalId.isServingNotice) {
+            applicant.professionalId.noticeEndDate = activeWorker.lastWorkingDate;
+          }
+        }
+      }
+      return applicant;
+    }));
+    return jobObj;
+  }));
+
+  res.json(jobsWithStatus);
 };
 
 exports.updateJob = async (req, res) => {
@@ -111,24 +136,94 @@ exports.deleteJob = async (req, res) => {
 };
 
 exports.getApplicants = async (req, res) => {
+  const HiredWorker = require('../models/HiredWorker');
   const job = await JobPost.findOne({ _id: req.params.id, contractorId: req.user.id })
-    .populate('applicants.professionalId', 'name phone email jobRole yearsOfExperience locationPreference qualification about');
+    .populate('applicants.professionalId', 'name phone email jobRole yearsOfExperience locationPreference qualification about isServingNotice noticeEndDate');
   if (!job) return res.status(404).json({ message: 'Job not found' });
-  res.json(job.applicants);
+
+  // Map over applicants and append active notice status
+  const applicantsWithStatus = await Promise.all(job.applicants.map(async (applicant) => {
+    const appObj = applicant.toObject();
+      if (appObj.professionalId) {
+        const activeWorker = await HiredWorker.findOne({ 
+          professionalId: appObj.professionalId._id,
+          status: { $in: ['Active', 'ResignationPending', 'ResignationAccepted'] }
+        });
+        
+        if (activeWorker) {
+          appObj.professionalId.isEmployed = activeWorker.status === 'Active';
+          appObj.professionalId.isServingNotice = ['ResignationPending', 'ResignationAccepted'].includes(activeWorker.status);
+          if (appObj.professionalId.isServingNotice) {
+            appObj.professionalId.noticeEndDate = activeWorker.lastWorkingDate;
+          }
+        } else {
+          appObj.professionalId.isEmployed = false;
+          appObj.professionalId.isServingNotice = false;
+        }
+      }
+    return appObj;
+  }));
+
+  res.json(applicantsWithStatus);
 };
 
 exports.updateApplicantStatus = async (req, res) => {
-  const { id, applicationId } = req.params;
-  const { status } = req.body;
+  try {
+    const { id, applicationId } = req.params;
+    const { status } = req.body;
 
-  const job = await JobPost.findOneAndUpdate(
-    { _id: id, contractorId: req.user.id, 'applicants._id': applicationId },
-    { $set: { 'applicants.$.status': status } },
-    { returnDocument: 'after' }
-  );
+    const job = await JobPost.findOneAndUpdate(
+      { _id: id, contractorId: req.user.id, 'applicants._id': applicationId },
+      { $set: { 'applicants.$.status': status } },
+      { returnDocument: 'after' }
+    );
 
-  if (!job) return res.status(404).json({ message: 'Job or application not found' });
-  res.json(job);
+    if (!job) return res.status(404).json({ message: 'Job or application not found' });
+
+    const applicant = job.applicants.find(a => a._id.toString() === applicationId);
+    if (applicant) {
+      // Sync with Application model
+      const applicationDoc = await Application.findOne({ jobPostId: job._id, professionalId: applicant.professionalId });
+      if (applicationDoc) {
+        applicationDoc.status = status;
+        await applicationDoc.save();
+      }
+
+      if (status === 'Shortlisted') {
+        const User = require('../models/User');
+        const Notification = require('../models/Notification');
+        const NOTIFICATION_TABS = require('../../shared/notificationConstants');
+        const { getIO } = require('../socket');
+
+        const contractor = await User.findById(req.user.id);
+        const notification = new Notification({
+          userId: applicant.professionalId,
+          type: 'Job',
+          title: 'You have been Shortlisted',
+          message: `${contractor.companyName || contractor.name} has shortlisted your application for ${job.jobRole}.`,
+          relatedId: job._id,
+          actionTab: NOTIFICATION_TABS.PROFESSIONAL_MY_APPLICATIONS
+        });
+        await notification.save();
+
+        try {
+          const io = getIO();
+          if (io) {
+            io.to(`user:${applicant.professionalId}`).emit('notification', { notification });
+            io.to(`user:${applicant.professionalId}`).emit('applicationStatusUpdate', {
+              applicationId: applicationDoc ? applicationDoc._id : null,
+              newStatus: status,
+              jobPostId: job._id
+            });
+          }
+        } catch (err) { console.error('Socket err:', err); }
+      }
+    }
+
+    res.json(job);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
 };
 
 exports.hireProfessional = async (req, res) => {
@@ -137,6 +232,16 @@ exports.hireProfessional = async (req, res) => {
 
     const job = await JobPost.findOne({ _id: id, contractorId: req.user.id });
     if (!job) return res.status(404).json({ message: 'Job not found' });
+
+    const HiredWorker = require('../models/HiredWorker');
+    const activeWorker = await HiredWorker.findOne({
+      professionalId,
+      status: { $in: ['Active', 'ResignationPending', 'ResignationAccepted'] }
+    });
+
+    if (activeWorker) {
+      return res.status(400).json({ message: 'Cannot hire candidate. They are currently employed or serving a notice period.' });
+    }
 
     // 1. Update application status to Hired
     const application = await Application.findOne({ jobPostId: job._id, professionalId });

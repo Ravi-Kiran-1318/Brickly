@@ -26,6 +26,33 @@ const ROLE_HIERARCHY = {
   'Foreman': ['Assistant Foreman', 'Foreman', 'Senior Foreman', 'General Foreman', 'Site Supervisor']
 };
 
+const NoticeTimer = ({ endDate }) => {
+  const [timeLeft, setTimeLeft] = useState('');
+
+  useEffect(() => {
+    const calculateTimeLeft = () => {
+      const diff = new Date(endDate) - new Date();
+      if (diff <= 0) return 'Completed';
+      
+      const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+      const hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
+      const minutes = Math.floor((diff / 1000 / 60) % 60);
+      const seconds = Math.floor((diff / 1000) % 60);
+      
+      return `${days}d ${hours}h ${minutes}m ${seconds}s`;
+    };
+
+    setTimeLeft(calculateTimeLeft());
+    const timer = setInterval(() => {
+      setTimeLeft(calculateTimeLeft());
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [endDate]);
+
+  return <span className="text-[10px] font-black text-yellow-600 font-mono tracking-tighter bg-yellow-50 px-1.5 py-0.5 rounded border border-yellow-100 shadow-sm">{timeLeft}</span>;
+};
+
 const JobPostsTab = () => {
   const [jobs, setJobs] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -33,6 +60,7 @@ const JobPostsTab = () => {
   const [expandedJob, setExpandedJob] = useState(null);
   const [selectedApplicant, setSelectedApplicant] = useState(null);
   const [selectedJobId, setSelectedJobId] = useState(null);
+  const [applicantFilter, setApplicantFilter] = useState('All');
   const [formData, setFormData] = useState({
     jobRole: '', workLocation: '', salary: '', 
     salaryType: 'monthly', duration: '', requiredSkills: ''
@@ -261,10 +289,23 @@ const JobPostsTab = () => {
                   className="border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-black/20 overflow-hidden"
                 >
                   <div className="p-8 space-y-4 text-slate-500">
-                    <h4 className="text-sm font-black uppercase tracking-widest text-slate-400">Applicant List</h4>
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                      <h4 className="text-sm font-black uppercase tracking-widest text-slate-400">Applicant List</h4>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {['All', 'Applied', 'Shortlisted', 'Hired'].map(f => (
+                          <button
+                            key={f}
+                            onClick={() => setApplicantFilter(f)}
+                            className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${applicantFilter === f ? 'bg-primary text-white shadow-md' : 'bg-white dark:bg-slate-800 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700'}`}
+                          >
+                            {f}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                     {job.applicants && job.applicants.length > 0 ? (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {job.applicants.map((app) => (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                        {job.applicants.filter(app => applicantFilter === 'All' || app.status === applicantFilter).map((app) => (
                            <div key={app._id} className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-slate-800 flex flex-col justify-between shadow-sm hover:shadow-md transition-all gap-4">
                              <div className="space-y-3">
                                <div className="flex items-center justify-between">
@@ -281,9 +322,26 @@ const JobPostsTab = () => {
                                      </p>
                                    </div>
                                  </div>
-                                 <span className={`text-[10px] font-black uppercase px-2.5 py-1 rounded-lg border ${STATUS_BADGE[app.status] || 'bg-slate-50 text-slate-500 border-slate-100'}`}>
-                                   {app.status}
-                                 </span>
+                                 <div className="flex flex-col items-end gap-1">
+                                   <span className={`text-[10px] font-black uppercase px-2.5 py-1 rounded-lg border ${STATUS_BADGE[app.status] || 'bg-slate-50 text-slate-500 border-slate-100'}`}>
+                                     {app.status}
+                                   </span>
+                                   {app.professionalId?.isServingNotice && (
+                                     <div className="flex flex-col items-end gap-1.5">
+                                       <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-md border bg-yellow-100 text-yellow-700 border-yellow-200">
+                                         Notice Period
+                                       </span>
+                                       {app.professionalId.noticeEndDate && (
+                                         <NoticeTimer endDate={app.professionalId.noticeEndDate} />
+                                       )}
+                                     </div>
+                                   )}
+                                   {app.professionalId?.isEmployed && !app.professionalId?.isServingNotice && (
+                                     <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-md border bg-slate-100 text-slate-500 border-slate-200">
+                                       Already Employed
+                                     </span>
+                                   )}
+                                 </div>
                                </div>
 
                                <div className="grid grid-cols-2 gap-2 text-xs font-bold text-slate-500 dark:text-slate-400">
@@ -325,12 +383,22 @@ const JobPostsTab = () => {
                                   </span>
                                 )}
                                 {!job.isFilled && app.status !== 'Hired' && (
-                                  <button 
-                                    onClick={() => handleHire(job._id, app.professionalId?._id)}
-                                    className="flex-1 py-2.5 px-2 rounded-xl text-xs font-black bg-green-500 hover:bg-green-600 text-white flex items-center justify-center gap-1 shadow-lg shadow-green-500/10 transition-all"
-                                  >
-                                    Hire Now
-                                  </button>
+                                  (app.professionalId?.isServingNotice || app.professionalId?.isEmployed) ? (
+                                    <button 
+                                      disabled
+                                      className="flex-1 py-2.5 px-2 rounded-xl text-xs font-black bg-slate-200 dark:bg-slate-800 text-slate-400 flex items-center justify-center gap-1 cursor-not-allowed transition-all"
+                                      title={app.professionalId?.isServingNotice ? `Serving notice until ${new Date(app.professionalId.noticeEndDate).toLocaleDateString()}. Cannot hire until complete.` : "Candidate is already employed elsewhere."}
+                                    >
+                                      Unavailable
+                                    </button>
+                                  ) : (
+                                    <button 
+                                      onClick={() => handleHire(job._id, app.professionalId?._id)}
+                                      className="flex-1 py-2.5 px-2 rounded-xl text-xs font-black bg-green-500 hover:bg-green-600 text-white flex items-center justify-center gap-1 shadow-lg shadow-green-500/10 transition-all"
+                                    >
+                                      Hire Now
+                                    </button>
+                                  )
                                 )}
                                 {app.status === 'Hired' && (
                                   <span className="flex-1 py-2.5 px-2 rounded-xl text-xs font-black bg-green-50 text-green-600 flex items-center justify-center gap-1 border border-green-100">

@@ -87,7 +87,7 @@ const initCronJobs = () => {
       const User = require('./models/User');
 
       const expiredResignations = await HiredWorker.find({
-        status: 'ResignationAccepted',
+        status: { $in: ['ResignationPending', 'ResignationAccepted'] },
         lastWorkingDate: { $lte: new Date() }
       });
 
@@ -130,6 +130,35 @@ const initCronJobs = () => {
             subject: 'Your notice period has ended — Welcome back to BuildR',
             html: '<p>Your 7-day notice period has ended. You are now free to apply to new opportunities.</p>'
           });
+        }
+
+        // Notify waiting contractors
+        const Application = require('./models/Application');
+        const JobPost = require('./models/JobPost');
+        
+        const pendingApplications = await Application.find({ 
+          professionalId: prof._id, 
+          status: 'Applied' 
+        });
+
+        for (const app of pendingApplications) {
+          const job = await JobPost.findById(app.jobPostId);
+          if (job) {
+            const contractorNotif = new Notification({
+              userId: app.contractorId,
+              title: 'Candidate Available',
+              message: `${prof.name} has completed their notice period and is now available to hire for your job "${job.jobRole}".`,
+              type: 'Job',
+              actionTab: NOTIFICATION_TABS.CONTRACTOR_MY_JOBS || 'jobs',
+              relatedId: job._id
+            });
+            await contractorNotif.save();
+
+            io.to(`user:${app.contractorId}`).emit('contractor:candidateAvailable', {
+              professionalId: prof._id,
+              jobPostId: job._id
+            });
+          }
         }
       }
 

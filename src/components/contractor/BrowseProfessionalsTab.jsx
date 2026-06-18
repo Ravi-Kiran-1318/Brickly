@@ -181,6 +181,14 @@ const BrowseProfessionalsTab = () => {
                 >
                   <IconCheck size={16} /> Hired
                 </button>
+              ) : post.professionalId?.isServingNotice ? (
+                <button 
+                  disabled
+                  className="flex-[2] py-3 px-2 rounded-xl text-xs font-black bg-slate-200 dark:bg-slate-800 text-slate-400 flex items-center justify-center gap-1.5 cursor-not-allowed transition-all"
+                  title={`Serving notice until ${new Date(post.professionalId.noticeEndDate).toLocaleDateString()}`}
+                >
+                  Notice Period
+                </button>
               ) : (
                 <button 
                   onClick={() => openHireModal(post)}

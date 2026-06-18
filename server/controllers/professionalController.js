@@ -87,7 +87,9 @@ exports.getWorkingStatus = async (req, res) => {
       isInNoticePeriod: isNotice,
       currentJob: {
         jobRole: hiredWorker.jobRole,
-        joinDate: hiredWorker.joinDate
+        joinDate: hiredWorker.joinDate,
+        salary: hiredWorker.salary,
+        duration: hiredWorker.duration
       },
       lastWorkingDate: isNotice ? hiredWorker.lastWorkingDate : null,
       contractorName: contractor ? (contractor.companyName || contractor.name) : null,
@@ -251,7 +253,10 @@ exports.applyToJob = async (req, res) => {
       `
     });
 
-    res.status(201).json(application);
+    res.status(201).json({
+      ...application.toObject(),
+      isNoticePeriod: !!noticeEmployment
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -507,7 +512,28 @@ exports.getAllAvailability = async (req, res) => {
       .populate('professionalId', 'name email phone avatar about jobRole yearsOfExperience')
       .sort({ createdAt: -1 });
 
-    res.json(posts);
+    const HiredWorker = require('../models/HiredWorker');
+    const postsWithStatus = await Promise.all(posts.map(async (post) => {
+      const pObj = post.toObject();
+      if (pObj.professionalId) {
+        const activeWorker = await HiredWorker.findOne({
+          professionalId: pObj.professionalId._id,
+          status: { $in: ['Active', 'ResignationPending', 'ResignationAccepted'] }
+        });
+        
+        if (activeWorker) {
+          pObj.professionalId.isServingNotice = ['ResignationPending', 'ResignationAccepted'].includes(activeWorker.status);
+          if (pObj.professionalId.isServingNotice) {
+            pObj.professionalId.noticeEndDate = activeWorker.lastWorkingDate;
+          }
+        } else {
+          pObj.professionalId.isServingNotice = false;
+        }
+      }
+      return pObj;
+    }));
+
+    res.json(postsWithStatus);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -522,6 +548,16 @@ exports.directHireRequest = async (req, res) => {
     const professional = await User.findById(professionalId);
     
     if (!professional) return res.status(404).json({ message: 'Professional not found' });
+
+    const HiredWorker = require('../models/HiredWorker');
+    const activeWorker = await HiredWorker.findOne({
+      professionalId,
+      status: { $in: ['Active', 'ResignationPending', 'ResignationAccepted'] }
+    });
+
+    if (activeWorker) {
+      return res.status(400).json({ message: 'Cannot hire candidate. They are currently employed or serving a notice period.' });
+    }
 
     // Create DirectHireRequest
     const request = new DirectHireRequest({
@@ -846,39 +882,28 @@ exports.submitResignation = async (req, res) => {
     }
 
     const professional = await User.findById(req.user.id);
-    let contractorId = professional.currentContractorId;
-    let jobRole = professional.currentJobRole;
+    const activeWorker = await HiredWorker.findOne({ professionalId: req.user.id, status: 'Active' });
 
-    if (!contractorId) {
-      const activeWorker = await HiredWorker.findOne({ professionalId: req.user.id, status: 'Active' });
-      if (activeWorker) {
-        contractorId = activeWorker.contractorId;
-        jobRole = activeWorker.jobRole;
-      } else {
-        const activeApp = await Application.findOne({ professionalId: req.user.id, status: { $in: ['Joined', 'Hired'] } }).sort({ updatedAt: -1 });
-        if (activeApp) {
-          contractorId = activeApp.contractorId;
-        } else {
-          const activeDirect = await DirectHireRequest.findOne({ professionalId: req.user.id, status: 'Joined' }).sort({ updatedAt: -1 });
-          if (activeDirect) {
-            contractorId = activeDirect.contractorId;
-            jobRole = activeDirect.jobRole;
-          }
-        }
-      }
-      
-      if (contractorId) {
-        professional.currentContractorId = contractorId;
-        professional.currentJobRole = jobRole;
-      }
+    if (!activeWorker) {
+      return res.status(400).json({ message: 'You are not currently hired or already serving notice.' });
     }
 
-    if (!contractorId) {
-      return res.status(400).json({ message: 'You are not currently hired' });
-    }
-    if (professional.isServingNotice) {
-      return res.status(400).json({ message: 'You are already serving a notice period' });
-    }
+    const contractorId = activeWorker.contractorId;
+    const jobRole = activeWorker.jobRole;
+
+    const noticeEndDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+    // Update HiredWorker
+    activeWorker.status = 'ResignationPending';
+    activeWorker.resignationReason = reason;
+    activeWorker.resignationSubmittedDate = new Date();
+    activeWorker.lastWorkingDate = noticeEndDate;
+    await activeWorker.save();
+
+    // Update User so frontend correctly disables Hire buttons
+    professional.isServingNotice = true;
+    professional.noticeEndDate = noticeEndDate;
+    await professional.save();
 
     const application = await Application.findOne({
       professionalId: req.user.id,
@@ -900,14 +925,6 @@ exports.submitResignation = async (req, res) => {
         await directHire.save();
       }
     }
-
-    const noticeEndDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-    professional.isServingNotice = true;
-    professional.noticeStartDate = new Date();
-    professional.noticeEndDate = noticeEndDate;
-    professional.isAvailable = false;
-    professional.resignationReason = reason;
-    await professional.save();
 
     const contractor = await User.findById(contractorId);
     if (contractor) {
@@ -960,18 +977,24 @@ exports.respondToStayRequest = async (req, res) => {
     }
 
     const professional = await User.findById(req.user.id);
-    if (!professional.isServingNotice) {
-      return res.status(400).json({ message: 'You are not serving a notice period' });
+    const activeWorker = await HiredWorker.findOne({ 
+      professionalId: req.user.id, 
+      status: { $in: ['ResignationPending', 'ResignationAccepted'] } 
+    });
+
+    if (!activeWorker) {
+      return res.status(400).json({ message: 'You are not currently serving a notice period' });
     }
 
-    const contractorId = professional.currentContractorId;
+    const contractorId = activeWorker.contractorId;
     const contractor = await User.findById(contractorId);
 
     if (response === 'accept') {
-      professional.isServingNotice = false;
-      professional.noticeStartDate = null;
-      professional.noticeEndDate = null;
-      professional.isAvailable = true;
+      activeWorker.status = 'Active';
+      activeWorker.resignationReason = null;
+      activeWorker.resignationSubmittedDate = null;
+      activeWorker.lastWorkingDate = null;
+      await activeWorker.save();
       
       const application = await Application.findOne({
         professionalId: req.user.id,
@@ -1011,7 +1034,7 @@ exports.respondToStayRequest = async (req, res) => {
       const notification = new Notification({
         userId: contractorId,
         title: 'Request to Stay Declined',
-        message: `${professional.name} has declined your Request to Stay. Notice period continues until ${new Date(professional.noticeEndDate).toLocaleDateString()}.`,
+        message: `${professional.name} has declined your Request to Stay. Notice period continues until ${new Date(activeWorker.lastWorkingDate).toLocaleDateString()}.`,
         type: 'Hire',
         actionTab: NOTIFICATION_TABS.CONTRACTOR_MY_TEAM
       });
@@ -1024,12 +1047,11 @@ exports.respondToStayRequest = async (req, res) => {
         await sendMail({
           to: contractor.email,
           subject: `${professional.name} has declined your Request to Stay`,
-          html: `<p><strong>${professional.name}</strong> has declined your request to stay. Their notice period will continue until ${new Date(professional.noticeEndDate).toLocaleDateString()}.</p>`
+          html: `<p><strong>${professional.name}</strong> has declined your request to stay. Their notice period will continue until ${new Date(activeWorker.lastWorkingDate).toLocaleDateString()}.</p>`
         });
       }
     }
 
-    await professional.save();
     res.json({ message: 'Response recorded successfully' });
   } catch (error) {
     res.status(500).json({ message: error.message });

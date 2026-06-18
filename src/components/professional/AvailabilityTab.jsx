@@ -169,18 +169,19 @@ const AvailabilityTab = ({ directHireRequests, setDirectHireRequests }) => {
 
   const fetchWorkingStatus = async () => {
     try {
-      if (!user?.currentContractorId) return;
-      const resApps = await api.get('/api/professional/applications');
-      const resDirect = await api.get('/api/professional/direct-hire-requests');
-      const apps = [...resApps.data, ...resDirect.data];
-      const joinedApp = apps.find(a => ['Joined', 'ResignationPending', 'ResignationAccepted'].includes(a.status));
-      if (joinedApp) {
-        setWorkingStatus({
-          isWorking: true,
-          contractorName: joinedApp.contractorId?.companyName || joinedApp.contractorId?.name || 'Contractor'
-        });
-      }
-    } catch (err) { console.error('Failed to fetch working status', err); }
+      const res = await api.get('/api/professional/working-status');
+      setWorkingStatus(res.data);
+    } catch (err) {
+      console.error('Failed to fetch working status', err);
+      setWorkingStatus({
+        isWorking: false,
+        isInNoticePeriod: false,
+        currentJob: null,
+        lastWorkingDate: null,
+        contractorName: null,
+        contractorId: null
+      });
+    }
   };
 
   const fetchNotifications = async () => {
@@ -386,6 +387,11 @@ const AvailabilityTab = ({ directHireRequests, setDirectHireRequests }) => {
             <p className="text-sm font-bold text-orange-600 dark:text-orange-300">
               Role: {user?.currentJobRole || user?.jobRole || 'Professional'}
             </p>
+            {workingStatus.currentJob?.salary && (
+              <p className="text-xs font-bold text-orange-600/80 dark:text-orange-300/80 mt-1">
+                Salary: ₹{workingStatus.currentJob.salary}
+              </p>
+            )}
           </div>
           <button 
             onClick={() => setIsResignModalOpen(true)}
@@ -424,7 +430,7 @@ const AvailabilityTab = ({ directHireRequests, setDirectHireRequests }) => {
       )}
 
       {/* Notice Period Banner */}
-      {user?.isServingNotice && (
+      {workingStatus.isInNoticePeriod && (
         <motion.div 
           initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}
           className="bg-orange-500 rounded-3xl p-6 text-white shadow-lg shadow-orange-500/20"
@@ -435,6 +441,9 @@ const AvailabilityTab = ({ directHireRequests, setDirectHireRequests }) => {
             </div>
             <div className="flex-1">
               <h3 className="font-black text-xl mb-1">You are currently serving a notice period.</h3>
+              <p className="text-sm font-bold text-orange-100 mb-4">
+                You cannot join a new job until it completes on {new Date(workingStatus.lastWorkingDate).toLocaleDateString()}, but you can apply for jobs and create availability posts.
+              </p>
               <p className="text-sm font-bold text-orange-100 mb-4">
                 {daysRemaining} days, {timeRemaining.h}h {timeRemaining.m}m {timeRemaining.s}s remaining
               </p>
@@ -650,19 +659,21 @@ const AvailabilityTab = ({ directHireRequests, setDirectHireRequests }) => {
               <div className="p-8 text-center bg-white dark:bg-slate-900 rounded-[35px] border-2 border-dashed border-slate-200 dark:border-slate-800 text-slate-400">
                  <IconPackage size={48} className="mx-auto mb-4 text-slate-200" />
                  <p className="font-bold mb-4">No availability post found.</p>
-                 <button 
-                   onClick={() => setIsFormOpen(true)}
-                   className="bg-accent text-white px-6 py-2 rounded-xl font-black text-sm"
-                 >
-                   Create One Now
-                 </button>
+                 {(!workingStatus.isWorking || workingStatus.isInNoticePeriod) && (
+                   <button 
+                     onClick={() => setIsFormOpen(true)}
+                     className="bg-accent text-white px-6 py-2 rounded-xl font-black text-sm"
+                   >
+                     Create One Now
+                   </button>
+                 )}
               </div>
             )}
          </div>
 
          {/* Right: Form Section */}
          <div className="lg:col-span-2">
-            {!user?.isServingNotice ? (
+            {(!workingStatus.isWorking || workingStatus.isInNoticePeriod) ? (
               <AnimatePresence>
                {isFormOpen && (
                  <motion.div 
@@ -818,7 +829,10 @@ const AvailabilityTab = ({ directHireRequests, setDirectHireRequests }) => {
         onClose={() => setIsResignModalOpen(false)}
         contractorName={workingStatus.contractorName}
         jobRole={user?.currentJobRole || user?.jobRole || 'Professional'}
-        onSuccess={() => window.location.reload()}
+        onSuccess={() => {
+          fetchWorkingStatus();
+          fetchProfileAndAvailability();
+        }}
       />
     </div>
   );

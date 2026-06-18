@@ -6,7 +6,7 @@ import { useAuth } from '../../context/AuthContext';
 import {
   IconBriefcase, IconMapPin, IconClock, IconCurrencyRupee,
   IconFilter, IconSearch, IconChevronRight, IconCircleCheck,
-  IconAlertCircle, IconMapRoute, IconX, IconDoorExit
+  IconAlertCircle, IconMapRoute, IconX, IconDoorExit, IconRefresh
 } from '@tabler/icons-react';
 import ResignationModal from './ResignationModal';
 
@@ -261,7 +261,10 @@ const JobsFeedTab = ({ openMapJobId, setOpenMapJobId, directHireRequests = [], s
         onClose={() => setIsResignModalOpen(false)}
         contractorName={workingStatus.contractorName}
         jobRole={user?.jobRole || 'Professional'}
-        onSuccess={() => window.location.reload()}
+        onSuccess={() => {
+          fetchWorkingStatus();
+          fetchJobs();
+        }}
       />
     </div>
   );

@@ -17,13 +17,12 @@ router.get('/working-status', professionalController.getWorkingStatus);
 
 // Job Feed
 router.get('/jobs', professionalController.getJobs);
-router.post('/jobs/:id/apply', checkNoticeBlock, professionalController.applyToJob);
+router.post('/jobs/:id/apply', professionalController.applyToJob);
 
 // Availability
 router.get('/my-availability', professionalController.getMyAvailabilityPosts);
 router.get('/availability', professionalController.getAvailability);
 router.post('/availability',
-  checkNoticeBlock,
   (req, res, next) => { req.uploadFolder = 'resumes'; next(); },
   upload.fields([
     { name: 'resume', maxCount: 1 },

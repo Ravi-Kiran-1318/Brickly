@@ -180,8 +180,8 @@ const OverviewTab = ({ setActiveTab }) => {
                       <p className="text-[10px] font-black text-accent uppercase tracking-widest">{member.jobRole || member.professionalId?.jobRole || 'Professional'}</p>
                       <div className="flex items-center gap-3 mt-1">
                          <div className="flex items-center gap-1">
-                            <span className={`w-2 h-2 rounded-full ${(member.isServingNotice || member.professionalId?.isServingNotice) ? 'bg-orange-500 animate-pulse' : 'bg-green-500'}`} />
-                            <span className="text-[10px] font-bold text-slate-400 uppercase">{(member.isServingNotice || member.professionalId?.isServingNotice) ? 'Serving Notice' : 'Active'}</span>
+                            <span className={`w-2 h-2 rounded-full ${member.isServingNotice ? 'bg-orange-500 animate-pulse' : 'bg-green-500'}`} />
+                            <span className="text-[10px] font-bold text-slate-400 uppercase">{member.isServingNotice ? 'Serving Notice' : 'Active'}</span>
                          </div>
                          {(member.locationPreference || member.professionalId?.locationPreference) && (
                            <span className="text-[10px] font-bold text-slate-400 truncate">• {member.locationPreference || member.professionalId?.locationPreference}</span>
@@ -189,7 +189,7 @@ const OverviewTab = ({ setActiveTab }) => {
                       </div>
                    </div>
                    <button
-                      onClick={() => setReviewProfessional(member._id)}
+                      onClick={() => setReviewProfessional(member)}
                       className="w-10 h-10 rounded-xl bg-orange-50 dark:bg-orange-900/20 text-orange-500 flex items-center justify-center hover:bg-orange-100 hover:scale-110 transition-all shrink-0"
                       title="Leave a Review"
                    >
