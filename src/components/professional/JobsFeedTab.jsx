@@ -8,6 +8,7 @@ import {
   IconFilter, IconSearch, IconChevronRight, IconCircleCheck,
   IconAlertCircle, IconMapRoute, IconX, IconDoorExit, IconRefresh
 } from '@tabler/icons-react';
+import toast from 'react-hot-toast';
 import ResignationModal from './ResignationModal';
 
 const RouteMap = lazy(() => import('./RouteMap'));
@@ -67,11 +68,15 @@ const JobsFeedTab = ({ openMapJobId, setOpenMapJobId, directHireRequests = [], s
     socket.on('professional:newJob', handleNewJob);
     socket.on('resignationAccepted', handleStatusRefresh);
     socket.on('resignationComplete', handleStatusRefresh);
+    socket.on('professional:hired', handleStatusRefresh);
+    socket.on('applicationStatusUpdate', handleStatusRefresh);
 
     return () => {
       socket.off('professional:newJob', handleNewJob);
       socket.off('resignationAccepted', handleStatusRefresh);
       socket.off('resignationComplete', handleStatusRefresh);
+      socket.off('professional:hired', handleStatusRefresh);
+      socket.off('applicationStatusUpdate', handleStatusRefresh);
     };
   }, [filters]);
 
@@ -104,6 +109,17 @@ const JobsFeedTab = ({ openMapJobId, setOpenMapJobId, directHireRequests = [], s
     } catch (err) {
       console.error(err);
     } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleManualRefresh = async () => {
+    setLoading(true);
+    try {
+      await Promise.all([fetchWorkingStatus(), fetchJobs()]);
+      toast.success('Jobs feed refreshed!');
+    } catch (err) {
+      toast.error('Failed to refresh feed');
       setLoading(false);
     }
   };
@@ -208,10 +224,7 @@ const JobsFeedTab = ({ openMapJobId, setOpenMapJobId, directHireRequests = [], s
           </select>
         </div>
         <button
-          onClick={() => {
-            fetchWorkingStatus();
-            fetchJobs();
-          }}
+          onClick={handleManualRefresh}
           className="bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 p-3 rounded-2xl transition-all"
           title="Refresh Feed"
         >

@@ -53,14 +53,19 @@ router.put('/direct-hire-requests/:id/reject', professionalController.rejectDire
 
 // Resignation & Notice Period
 router.post('/resign', professionalController.submitResignation);
+router.post('/resign/cancel', professionalController.cancelResignation);
 router.post('/request-to-stay/respond', professionalController.respondToStayRequest);
 router.get('/notice-status', professionalController.getNoticeStatus);
 
 // Reviews
 const profReviewController = require('../controllers/professionalReviewController');
+const contractorReviewController = require('../controllers/contractorReviewController');
 router.get('/my-reviews', profReviewController.getMyReviews);
 router.put('/reviews/:id/reply', profReviewController.replyToReview);
 router.put('/reviews/:id/report', profReviewController.reportReview);
+router.post('/contractors/:contractorId/review', contractorReviewController.createReview);
+router.get('/contractors/reviews/left', contractorReviewController.getReviewsLeft);
+router.put('/contractor-reviews/:reviewId/report', contractorReviewController.reportReview);
 
 // Notifications
 router.get('/notifications', professionalController.getNotifications);

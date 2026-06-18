@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import api from '../../api';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
+import toast from 'react-hot-toast';
 import { 
   IconBriefcase, IconUsers, IconFileInvoice, IconBell,
   IconCheck, IconChevronRight, IconTrendingUp, IconCircleCheck, IconHammer,
-  IconStar
+  IconStar, IconX, IconSend
 } from '@tabler/icons-react';
 import LeaveReviewModal from './LeaveReviewModal';
 
@@ -26,23 +27,40 @@ const OverviewTab = ({ setActiveTab }) => {
   const [stats, setStats] = useState(null);
   const [interests, setInterests] = useState([]);
   const [team, setTeam] = useState([]);
+  const [pastTeam, setPastTeam] = useState([]);
+  const [jobs, setJobs] = useState([]);
   const [hasPortfolio, setHasPortfolio] = useState(false);
   const [loading, setLoading] = useState(true);
   const [reviewProfessional, setReviewProfessional] = useState(null);
 
+  // Hire Again state
+  const [hireAgainMember, setHireAgainMember] = useState(null);
+  const [hireAgainData, setHireAgainData] = useState({
+    jobRole: '',
+    workSiteLocation: '',
+    salary: '',
+    duration: 'Long term',
+    jobPostId: ''
+  });
+  const [hireAgainLoading, setHireAgainLoading] = useState(false);
+
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [statsRes, interestsRes, teamRes, portfolioRes] = await Promise.all([
+        const [statsRes, interestsRes, teamRes, portfolioRes, pastTeamRes, jobsRes] = await Promise.all([
           api.get('/api/contractor/stats'),
           api.get('/api/contractor/interests'),
           api.get('/api/contractor/team'),
-          api.get('/api/contractor/portfolio')
+          api.get('/api/contractor/portfolio'),
+          api.get('/api/contractor/past-team'),
+          api.get('/api/contractor/jobs')
         ]);
         setStats(statsRes.data);
         setInterests(interestsRes.data.slice(0, 5));
         setTeam(teamRes.data);
         setHasPortfolio(portfolioRes.data.length > 0);
+        setPastTeam(pastTeamRes.data);
+        setJobs(jobsRes.data.filter(j => !j.isFilled));
       } catch (err) {
         console.error(err);
       } finally {
@@ -67,6 +85,41 @@ const OverviewTab = ({ setActiveTab }) => {
       };
     });
   }, []);
+
+  const openHireAgain = (member) => {
+    setHireAgainMember(member);
+    setHireAgainData({
+      jobRole: member.jobRole || '',
+      workSiteLocation: member.workLocation || '',
+      salary: member.salary ? String(member.salary) : '',
+      duration: 'Long term',
+      jobPostId: ''
+    });
+  };
+
+  const handleHireAgainSubmit = async (e) => {
+    e.preventDefault();
+    if (!hireAgainData.jobRole || !hireAgainData.workSiteLocation || !hireAgainData.salary) {
+      return toast.error('Please fill in all required fields');
+    }
+    setHireAgainLoading(true);
+    try {
+      const professionalId = hireAgainMember.professionalId?._id || hireAgainMember._id;
+      await api.post(`/api/contractor/direct-hire/${professionalId}`, {
+        jobRole: hireAgainData.jobRole,
+        workSiteLocation: hireAgainData.workSiteLocation,
+        salary: Number(hireAgainData.salary),
+        duration: hireAgainData.duration,
+        jobPostId: hireAgainData.jobPostId || null
+      });
+      toast.success('Direct hire request sent successfully!');
+      setHireAgainMember(null);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to send direct hire request');
+    } finally {
+      setHireAgainLoading(false);
+    }
+  };
 
   if (loading) return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 animate-pulse">
@@ -162,7 +215,7 @@ const OverviewTab = ({ setActiveTab }) => {
         </div>
       </div>
 
-      {/* Team Overview */}
+      {/* Active Team Overview */}
       <div className="space-y-4">
          <div className="flex items-center justify-between">
             <h3 className="text-xl font-black text-primary dark:text-white uppercase tracking-tight">Active Team Members</h3>
@@ -208,9 +261,9 @@ const OverviewTab = ({ setActiveTab }) => {
                        <button 
                          onClick={async () => {
                            try {
-                             await api.post(`/api/contractor/resignation/${member._id}/request-stay`, { message: "Please stay with us, we value your work!" });
-                             alert('Request sent to professional.');
-                           } catch (err) { alert(err.response?.data?.message || 'Failed to send'); }
+                             await api.post(`/api/contractor/team/request-to-stay/${member.professionalId?._id || member._id}`, { message: "Please stay with us, we value your work!" });
+                             toast.success('Request sent to professional.');
+                           } catch (err) { toast.error(err.response?.data?.message || 'Failed to send'); }
                          }}
                          className="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-xl text-xs font-black transition-all hover:bg-slate-200"
                        >
@@ -229,11 +282,154 @@ const OverviewTab = ({ setActiveTab }) => {
          </div>
       </div>
 
+      {/* Past Team Overview */}
+      <div className="space-y-4 pt-4">
+         <div className="flex items-center justify-between">
+            <h3 className="text-xl font-black text-primary dark:text-white uppercase tracking-tight">Past Team Members</h3>
+         </div>
+         <div className="grid grid-cols-1 gap-6">
+            {pastTeam.length > 0 ? pastTeam.map((member, i) => (
+              <div key={member._id || i} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 rounded-[32px] flex flex-col gap-4 hover:border-accent transition-all shadow-sm group">
+                 <div className="flex items-center gap-4">
+                   <div className="w-14 h-14 rounded-2xl bg-slate-50 dark:bg-slate-800 flex items-center justify-center font-black text-xl text-primary dark:text-white border border-slate-100 dark:border-slate-700 uppercase group-hover:scale-110 transition-transform">
+                      {member.name?.charAt(0) || 'P'}
+                   </div>
+                   <div className="flex-1 min-w-0">
+                      <h4 className="font-black text-primary dark:text-white truncate">{member.name}</h4>
+                      <p className="text-[10px] font-black text-accent uppercase tracking-widest">{member.jobRole || 'Past Employee'}</p>
+                      <div className="flex items-center gap-3 mt-1">
+                         <span className="text-[10px] font-bold text-slate-400 uppercase">Worked as {member.jobRole}</span>
+                         {member.joinedAt && (
+                           <span className="text-[10px] font-bold text-slate-400">• Joined {new Date(member.joinedAt).toLocaleDateString()}</span>
+                         )}
+                      </div>
+                   </div>
+                   <button
+                      onClick={() => openHireAgain(member)}
+                      className="px-6 py-3 bg-accent text-white rounded-2xl font-black text-xs hover:bg-orange-600 transition-colors shadow-lg shadow-orange-500/20"
+                   >
+                      Hire Again
+                   </button>
+                 </div>
+              </div>
+            )) : (
+              <div className="col-span-full py-12 text-center bg-slate-50 dark:bg-slate-900/40 rounded-[32px] border-2 border-dashed border-slate-200 dark:border-slate-800">
+                  <IconUsers size={40} className="mx-auto text-slate-300 mb-4" />
+                  <p className="text-slate-400 font-bold">No past team members found.</p>
+              </div>
+            )}
+         </div>
+      </div>
+
       <LeaveReviewModal 
         isOpen={!!reviewProfessional}
         onClose={() => setReviewProfessional(null)}
         professional={reviewProfessional}
       />
+
+      {/* Hire Again Modal */}
+      <AnimatePresence>
+        {hireAgainMember && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setHireAgainMember(null)} />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white dark:bg-slate-900 w-full max-w-md rounded-[32px] p-8 relative z-10 shadow-2xl border border-slate-200 dark:border-slate-800"
+            >
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-2xl font-black text-primary dark:text-white">Hire Again</h3>
+                <button onClick={() => setHireAgainMember(null)} className="p-1.5 bg-slate-50 dark:bg-slate-800 rounded-full text-slate-400 hover:text-slate-600"><IconX size={18}/></button>
+              </div>
+              <p className="text-slate-500 text-sm mb-6">Send a direct hire request to <strong className="text-primary dark:text-white">{hireAgainMember.name}</strong>.</p>
+              
+              <form onSubmit={handleHireAgainSubmit} className="space-y-4">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Job Role *</label>
+                  <input 
+                    type="text" 
+                    required
+                    value={hireAgainData.jobRole} 
+                    onChange={e => setHireAgainData({ ...hireAgainData, jobRole: e.target.value })}
+                    placeholder="e.g. Electrician"
+                    className="w-full p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 font-bold text-primary dark:text-white outline-none focus:ring-4 focus:ring-accent/10"
+                  />
+                </div>
+                
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Work Site Location *</label>
+                  <input 
+                    type="text" 
+                    required
+                    value={hireAgainData.workSiteLocation} 
+                    onChange={e => setHireAgainData({ ...hireAgainData, workSiteLocation: e.target.value })}
+                    placeholder="e.g. Delhi NCR"
+                    className="w-full p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 font-bold text-primary dark:text-white outline-none focus:ring-4 focus:ring-accent/10"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Salary (₹) *</label>
+                  <input 
+                    type="number" 
+                    required
+                    value={hireAgainData.salary} 
+                    onChange={e => setHireAgainData({ ...hireAgainData, salary: e.target.value })}
+                    placeholder="Salary offering"
+                    className="w-full p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 font-bold text-primary dark:text-white outline-none focus:ring-4 focus:ring-accent/10"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Duration *</label>
+                  <select 
+                    value={hireAgainData.duration} 
+                    onChange={e => setHireAgainData({ ...hireAgainData, duration: e.target.value })}
+                    className="w-full p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 font-bold text-primary dark:text-white outline-none focus:ring-4 focus:ring-accent/10"
+                  >
+                    <option value="Long term">Long term</option>
+                    <option value="Short term">Short term</option>
+                    <option value="Daily basis">Daily basis</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Link to Job Post (Optional)</label>
+                  <select 
+                    value={hireAgainData.jobPostId}
+                    onChange={e => setHireAgainData({ ...hireAgainData, jobPostId: e.target.value })}
+                    className="w-full p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 font-bold text-primary dark:text-white outline-none focus:ring-4 focus:ring-accent/10"
+                  >
+                    <option value="">No specific job post</option>
+                    {jobs.map(job => (
+                      <option key={job._id} value={job._id}>
+                        {job.jobRole} ({job.workLocation})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex gap-4 pt-4">
+                  <button type="button" onClick={() => setHireAgainMember(null)} className="flex-1 py-3 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-xl font-bold uppercase tracking-widest text-xs hover:bg-slate-200">Cancel</button>
+                  <button 
+                    type="submit" 
+                    disabled={hireAgainLoading}
+                    className="flex-1 py-3 bg-accent text-white rounded-xl font-bold uppercase tracking-widest text-xs hover:bg-orange-600 disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {hireAgainLoading ? (
+                      <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+                    ) : (
+                      <IconSend size={14} />
+                    )}
+                    {hireAgainLoading ? 'Sending...' : 'Send Request'}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

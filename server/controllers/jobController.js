@@ -85,7 +85,7 @@ exports.createJob = async (req, res) => {
 exports.getMyJobs = async (req, res) => {
   const HiredWorker = require('../models/HiredWorker');
   const jobs = await JobPost.find({ contractorId: req.user.id })
-    .populate('applicants.professionalId', 'name phone email jobRole yearsOfExperience locationPreference qualification about isServingNotice noticeEndDate')
+    .populate('applicants.professionalId', 'name phone email jobRole yearsOfExperience locationPreference qualification about isServingNotice noticeEndDate isTrustedProfessional averageRating totalReviews')
     .sort({ createdAt: -1 });
 
   // Map over applicants and append active notice status from HiredWorker dynamically
@@ -138,7 +138,7 @@ exports.deleteJob = async (req, res) => {
 exports.getApplicants = async (req, res) => {
   const HiredWorker = require('../models/HiredWorker');
   const job = await JobPost.findOne({ _id: req.params.id, contractorId: req.user.id })
-    .populate('applicants.professionalId', 'name phone email jobRole yearsOfExperience locationPreference qualification about isServingNotice noticeEndDate');
+    .populate('applicants.professionalId', 'name phone email jobRole yearsOfExperience locationPreference qualification about isServingNotice noticeEndDate isTrustedProfessional averageRating totalReviews');
   if (!job) return res.status(404).json({ message: 'Job not found' });
 
   // Map over applicants and append active notice status

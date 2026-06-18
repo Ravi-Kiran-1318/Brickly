@@ -236,6 +236,22 @@ const AvailabilityTab = ({ directHireRequests, setDirectHireRequests }) => {
     }
   };
 
+  const handleCancelResignation = async () => {
+    if (!window.confirm("Are you sure you want to cancel your resignation?")) return;
+    setResignLoading(true);
+    try {
+      await api.post('/api/professional/resign/cancel');
+      toast.success('Resignation cancelled successfully!');
+      fetchProfileAndAvailability();
+      fetchWorkingStatus();
+      window.location.reload();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to cancel resignation');
+    } finally {
+      setResignLoading(false);
+    }
+  };
+
 
   const fetchProfileAndAvailability = async () => {
     try {
@@ -448,7 +464,7 @@ const AvailabilityTab = ({ directHireRequests, setDirectHireRequests }) => {
                 {daysRemaining} days, {timeRemaining.h}h {timeRemaining.m}m {timeRemaining.s}s remaining
               </p>
               
-              {requestStayMessage && (
+              {requestStayMessage ? (
                 <div className="bg-white/10 rounded-2xl p-4 mt-4 border border-white/20">
                   <h4 className="font-black text-white mb-2">Request to Stay</h4>
                   <p className="text-sm text-orange-100 font-medium mb-4">"{requestStayMessage}"</p>
@@ -463,10 +479,27 @@ const AvailabilityTab = ({ directHireRequests, setDirectHireRequests }) => {
                       onClick={() => handleStayResponse('decline')}
                       className="px-6 py-2.5 border-2 border-white/30 hover:bg-white/10 text-white font-black rounded-xl transition-all text-sm"
                     >
-                      Decline
+                      Confirm Resignation
+                    </button>
+                    <button 
+                      onClick={handleCancelResignation}
+                      disabled={resignLoading}
+                      className="px-6 py-2.5 bg-red-500 hover:bg-red-600 text-white font-black rounded-xl transition-all text-sm disabled:opacity-50"
+                    >
+                      {resignLoading ? 'Cancelling...' : 'Cancel Resignation'}
                     </button>
                   </div>
                 </div>
+              ) : (
+                workingStatus.status === 'ResignationPending' && (
+                  <button 
+                    onClick={handleCancelResignation}
+                    disabled={resignLoading}
+                    className="mt-2 px-6 py-3 bg-red-500 hover:bg-red-600 text-white font-black rounded-2xl transition-all text-sm disabled:opacity-50"
+                  >
+                    {resignLoading ? 'Cancelling...' : 'Cancel My Resignation'}
+                  </button>
+                )
               )}
             </div>
           </div>

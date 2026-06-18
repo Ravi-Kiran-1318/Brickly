@@ -2,25 +2,30 @@ import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import api from '../api';
 import { PhoneVerifiedBadge, GSTVerifiedBadge } from '../components/VerifiedBadges';
-import { IconMapPin, IconCalendar, IconMail, IconPhone } from '@tabler/icons-react';
+import { IconMapPin, IconCalendar, IconMail, IconPhone, IconStar, IconStarFilled } from '@tabler/icons-react';
 
 const PublicProfile = () => {
   const { id } = useParams();
   const [profile, setProfile] = useState(null);
+  const [reviewsData, setReviewsData] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const fetchProfile = async () => {
+    const fetchData = async () => {
       try {
         const res = await api.get(`/api/auth/profile/${id}`);
         setProfile(res.data);
+        if (res.data.role === 'contractor') {
+          const reviewsRes = await api.get(`/api/contractor/${id}/public-reviews`);
+          setReviewsData(reviewsRes.data);
+        }
       } catch (err) {
         console.error(err);
       } finally {
         setLoading(false);
       }
     };
-    fetchProfile();
+    fetchData();
   }, [id]);
 
   if (loading) return <div className="p-20 text-center animate-pulse font-black">Loading Profile...</div>;
@@ -40,7 +45,7 @@ const PublicProfile = () => {
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-6 pt-24 lg:pt-8 flex flex-col lg:flex-row gap-8">
+      <div className="max-w-7xl mx-auto px-6 pt-24 lg:pt-8 flex flex-col lg:flex-row gap-8 pb-12">
         <div className="flex-1">
           <div className="lg:ml-72 mb-8">
             <h1 className="text-4xl font-black text-primary mb-2">
@@ -52,6 +57,14 @@ const PublicProfile = () => {
               </span>
               {profile.phoneVerified && <PhoneVerifiedBadge />}
               {profile.isVerified && <GSTVerifiedBadge />}
+              
+              {profile.role === 'contractor' && reviewsData && (
+                <div className="flex items-center gap-1.5 bg-yellow-50 px-3 py-1 rounded-full text-yellow-600 font-bold text-xs shrink-0 shadow-sm">
+                  <IconStarFilled size={14} />
+                  <span>{reviewsData.averageRating}</span>
+                  <span className="text-slate-400">({reviewsData.totalReviewCount} Reviews)</span>
+                </div>
+              )}
             </div>
 
             <p className="text-gray-500 text-lg leading-relaxed max-w-2xl">
@@ -93,6 +106,42 @@ const PublicProfile = () => {
               </div>
             </div>
           </div>
+
+          {profile.role === 'contractor' && reviewsData && (
+            <div className="lg:ml-72 mt-8 bg-white p-8 rounded-3xl border border-gray-100 shadow-sm space-y-6">
+              <h3 className="text-xl font-black text-primary border-b border-gray-100 pb-4 flex items-center gap-2">
+                Reviews left by Professionals
+              </h3>
+              
+              {reviewsData.reviews && reviewsData.reviews.length > 0 ? (
+                <div className="space-y-4">
+                  {reviewsData.reviews.map(r => (
+                    <div key={r._id} className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                      <div className="flex justify-between items-start mb-2">
+                        <div>
+                          <p className="font-black text-sm text-primary">{r.professionalName}</p>
+                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{r.jobRole}</p>
+                        </div>
+                        <div className="flex flex-col items-end">
+                          <span className="text-[10px] text-gray-400 font-bold">{r.date}</span>
+                          <div className="flex gap-0.5 mt-1">
+                            {[1, 2, 3, 4, 5].map(i => (
+                              i <= r.rating 
+                                ? <IconStarFilled key={i} size={12} className="text-yellow-500" />
+                                : <IconStar key={i} size={12} className="text-slate-200" />
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                      <p className="text-xs text-gray-500 italic leading-relaxed">"{r.reviewText}"</p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-gray-400 text-center py-6 font-bold">No reviews submitted yet.</p>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>

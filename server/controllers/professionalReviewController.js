@@ -1,5 +1,6 @@
 const ProfessionalReview = require('../models/ProfessionalReview');
 const HiredWorker = require('../models/HiredWorker');
+const { checkAndAwardTrustedBadge } = require('../utils/badgeHelper');
 const Application = require('../models/Application');
 const User = require('../models/User');
 const Notification = require('../models/Notification');
@@ -51,6 +52,9 @@ exports.createReview = async (req, res) => {
       averageRating: avgRating.toFixed(1),
       totalReviews: allReviews.length 
     });
+
+    // Check if professional qualifies for trusted badge
+    await checkAndAwardTrustedBadge(professionalId);
 
     const populated = await ProfessionalReview.findById(review._id)
       .populate('contractorId', 'name companyName');

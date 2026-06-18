@@ -49,16 +49,21 @@ const ApplicantProfileModal = ({ isOpen, onClose, applicant, jobId, onHire, onSh
                 {prof?.name?.charAt(0) || 'P'}
               </div>
               <div>
-                <h2 className="text-2xl sm:text-3xl font-black text-primary dark:text-white capitalize tracking-tight mb-1">
+                <h2 className="text-2xl sm:text-3xl font-black text-primary dark:text-white capitalize tracking-tight mb-1 flex items-center gap-2 flex-wrap">
                   {prof?.name || 'Unknown Professional'}
+                  {prof?.isTrustedProfessional && (
+                    <span className="bg-yellow-500 text-white text-[9px] font-black uppercase px-2.5 py-0.5 rounded-md flex items-center gap-0.5 shadow-md shadow-yellow-500/20 shrink-0" title="Trusted Professional Badge">
+                      ★ Trusted
+                    </span>
+                  )}
                 </h2>
                 <p className="text-accent font-bold uppercase tracking-widest text-xs flex items-center gap-2">
                   <IconBriefcase size={14} /> {prof?.jobRole || 'Professional'}
                 </p>
-                <div className="flex items-center gap-1 mt-2 text-yellow-500 bg-yellow-50 dark:bg-yellow-900/20 px-2 py-0.5 rounded-full w-fit">
+                <div className="flex items-center gap-1 mt-2 text-yellow-500 bg-yellow-50 dark:bg-yellow-900/20 px-2.5 py-1 rounded-full w-fit">
                   <IconStarFilled size={12} />
-                  <span className="text-xs font-black">4.8</span>
-                  <span className="text-[10px] font-bold text-slate-400 ml-1">(12 Reviews)</span>
+                  <span className="text-xs font-black">{prof?.averageRating || '0'}</span>
+                  <span className="text-[10px] font-bold text-slate-400 ml-1">({prof?.totalReviews || 0} Reviews)</span>
                 </div>
               </div>
             </div>

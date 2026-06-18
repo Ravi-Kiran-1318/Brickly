@@ -11,6 +11,7 @@ import {
   IconAlertCircle, IconHandStop, IconPlayerPlay, IconRefresh,
   IconBriefcase, IconDoorExit
 } from '@tabler/icons-react';
+import LeaveContractorReviewModal from './LeaveContractorReviewModal';
 
 const RouteMap = lazy(() => import('./RouteMap'));
 
@@ -65,6 +66,7 @@ const ApplicationsTab = ({ openMapJobId, setOpenMapJobId }) => {
   const [fetchError, setFetchError] = useState(null);
   const [joinConfirm, setJoinConfirm] = useState(null);
   const [joinLoading, setJoinLoading] = useState(false);
+  const [reviewModalData, setReviewModalData] = useState(null);
 
   useEffect(() => {
     fetchApplications();
@@ -209,6 +211,12 @@ const ApplicationsTab = ({ openMapJobId, setOpenMapJobId }) => {
             onJoinClick={() => setJoinConfirm(app._id)}
             onReject={handleReject}
             onResign={handleResignSubmit}
+            onLeaveReview={(appData) => setReviewModalData({
+              contractorId: appData.contractorId?._id || appData.contractorId,
+              contractorName: appData.contractorId?.name,
+              companyName: appData.contractorId?.companyName,
+              hiredWorkerId: appData.hiredWorkerId
+            })}
           />
         )) : (
           <div className="py-20 text-center bg-white dark:bg-slate-900 rounded-[40px] border-2 border-dashed border-slate-200 dark:border-slate-800">
@@ -271,11 +279,20 @@ const ApplicationsTab = ({ openMapJobId, setOpenMapJobId }) => {
           </div>
         )}
       </AnimatePresence>
+      <LeaveContractorReviewModal
+        isOpen={!!reviewModalData}
+        onClose={() => setReviewModalData(null)}
+        contractorId={reviewModalData?.contractorId}
+        contractorName={reviewModalData?.contractorName}
+        companyName={reviewModalData?.companyName}
+        hiredWorkerId={reviewModalData?.hiredWorkerId}
+        onSuccess={fetchApplications}
+      />
     </div>
   );
 };
 
-const ApplicationCard = ({ application, user, openMapJobId, setOpenMapJobId, onJoinClick, onReject, onResign }) => {
+const ApplicationCard = ({ application, user, openMapJobId, setOpenMapJobId, onJoinClick, onReject, onResign, onLeaveReview }) => {
   const job = application.jobPostId;
   const contractor = application.contractorId;
 
@@ -396,6 +413,15 @@ const ApplicationCard = ({ application, user, openMapJobId, setOpenMapJobId, onJ
                 className="flex items-center gap-2 text-xs font-black px-6 py-2.5 rounded-xl bg-slate-100 text-slate-600 hover:bg-red-100 hover:text-red-600 transition-all"
               >
                 <IconDoorExit size={16} /> Resign from this Position
+              </button>
+            )}
+
+            {(application.status === 'Joined' || application.status === 'Resigned') && application.hiredWorkerId && !application.hasReviewed && (
+              <button 
+                onClick={() => onLeaveReview(application)}
+                className="flex items-center gap-2 text-xs font-black px-6 py-2.5 rounded-xl bg-orange-500 text-white hover:bg-orange-600 shadow-lg shadow-orange-500/20 transition-all hover:-translate-y-0.5 active:scale-95"
+              >
+                Leave Review
               </button>
             )}
          </div>

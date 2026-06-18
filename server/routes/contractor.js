@@ -8,6 +8,11 @@ const portfolioController = require('../controllers/portfolioController');
 const procurementController = require('../controllers/procurementController');
 const upload = require('../middleware/upload');
 
+const contractorReviewController = require('../controllers/contractorReviewController');
+
+// Public route for contractor reviews left by professionals
+router.get('/:contractorId/public-reviews', contractorReviewController.getPublicReviews);
+
 router.use(auth);
 router.use(requireRole('contractor'));
 
@@ -15,6 +20,7 @@ router.get('/profile', contractorController.getProfile);
 router.put('/profile', contractorController.updateProfile);
 router.get('/stats', contractorController.getStats);
 router.get('/team', contractorController.getTeam);
+router.get('/past-team', contractorController.getPastTeam);
 
 // Job Post Routes
 router.post('/jobs', jobController.createJob);
@@ -52,6 +58,11 @@ router.get('/deals', procurementController.getActiveDeals);
 router.get('/reviews', contractorController.getMyReviews);
 router.post('/professionals/:id/review', require('../controllers/professionalReviewController').createReview);
 router.get('/professionals/:id/reviews', require('../controllers/professionalReviewController').getReviewsForProfessional);
+
+// Professional to Contractor Reviews (left by professionals)
+router.get('/my-reviews', contractorReviewController.getMyReviews);
+router.put('/reviews/:reviewId/reply', contractorReviewController.submitReply);
+router.put('/reviews/:reviewId/report', contractorReviewController.reportProfessionalReview);
 
 // Notification Routes
 router.get('/notifications', contractorController.getNotifications);

@@ -82,12 +82,13 @@ const initCronJobs = () => {
       const Notification = require('./models/Notification');
       const { sendMail } = require('./utils/mailer');
       const { getIO } = require('./socket');
+      const { checkAndAwardTrustedBadge } = require('./utils/badgeHelper');
 
       const HiredWorker = require('./models/HiredWorker');
       const User = require('./models/User');
 
       const expiredResignations = await HiredWorker.find({
-        status: { $in: ['ResignationPending', 'ResignationAccepted'] },
+        status: 'ResignationAccepted',
         lastWorkingDate: { $lte: new Date() }
       });
 
@@ -97,6 +98,44 @@ const initCronJobs = () => {
       }
 
       for (const hiredWorker of expiredResignations) {
+        const contractor = await User.findById(hiredWorker.contractorId);
+        if (!contractor) {
+          // Contractor account was deleted - still complete the resignation
+          hiredWorker.status = 'Resigned';
+          await hiredWorker.save();
+          
+          // Notify professional without contractor details
+          const notification = new Notification({
+            userId: hiredWorker.professionalId,
+            title: 'Resignation Complete',
+            message: 'Your resignation is complete. You are now available for new opportunities.',
+            type: 'General',
+            actionTab: NOTIFICATION_TABS.PROFESSIONAL_MY_AVAILABILITY || 'my-availability'
+          });
+          await notification.save();
+
+          const prof = await User.findById(hiredWorker.professionalId);
+          if (prof) {
+            prof.isServingNotice = false;
+            prof.noticeStartDate = null;
+            prof.noticeEndDate = null;
+            prof.currentContractorId = null;
+            prof.currentJobRole = null;
+            prof.resignationReason = null;
+            prof.isAvailable = true;
+            await prof.save();
+
+            // Check and award trusted badge
+            await checkAndAwardTrustedBadge(prof._id);
+          }
+
+          const io = getIO();
+          if (io) {
+            io.to(`user:${hiredWorker.professionalId}`).emit('resignationComplete');
+          }
+          continue; // Skip to next hiredWorker
+        }
+
         hiredWorker.status = 'Resigned';
         await hiredWorker.save();
 
@@ -112,6 +151,9 @@ const initCronJobs = () => {
         prof.isAvailable = true;
         await prof.save();
 
+        // Check and award trusted badge
+        await checkAndAwardTrustedBadge(prof._id);
+
         const notif = new Notification({
           userId: prof._id,
           title: 'Notice Period Ended',
@@ -122,7 +164,9 @@ const initCronJobs = () => {
         await notif.save();
 
         const io = getIO();
-        io.to(`user:${prof._id}`).emit('resignationComplete');
+        if (io) {
+          io.to(`user:${prof._id}`).emit('resignationComplete');
+        }
 
         if (prof.email) {
           await sendMail({
@@ -154,10 +198,12 @@ const initCronJobs = () => {
             });
             await contractorNotif.save();
 
-            io.to(`user:${app.contractorId}`).emit('contractor:candidateAvailable', {
-              professionalId: prof._id,
-              jobPostId: job._id
-            });
+            if (io) {
+              io.to(`user:${app.contractorId}`).emit('contractor:candidateAvailable', {
+                professionalId: prof._id,
+                jobPostId: job._id
+              });
+            }
           }
         }
       }

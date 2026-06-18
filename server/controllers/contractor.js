@@ -180,3 +180,36 @@ exports.requestToStay = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
+
+exports.getPastTeam = async (req, res) => {
+  try {
+    const workers = await HiredWorker.find({
+      contractorId: req.user.id,
+      status: { $in: ['Resigned', 'Completed', 'Released'] }
+    }).populate('professionalId', 'name phone email jobRole yearsOfExperience locationPreference about isAvailable profilePhoto');
+
+    const pastTeam = workers.filter(w => w.professionalId).map(w => {
+      const user = w.professionalId.toObject();
+      user.hiredWorkerId = w._id;
+      user.jobRole = w.jobRole;
+      user.salary = w.salary;
+      user.workLocation = w.workLocation;
+      user.status = w.status;
+      user.joinedAt = w.joinedAt;
+      return user;
+    });
+
+    const uniquePast = [];
+    const seen = new Set();
+    for (const member of pastTeam) {
+      if (!seen.has(member._id.toString())) {
+        seen.add(member._id.toString());
+        uniquePast.push(member);
+      }
+    }
+
+    res.json(uniquePast);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};

@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const User = require('../models/User');
 const JobPost = require('../models/JobPost');
 const AvailabilityPost = require('../models/AvailabilityPost');
@@ -75,26 +76,40 @@ exports.getWorkingStatus = async (req, res) => {
         currentJob: null,
         lastWorkingDate: null,
         contractorName: null,
-        contractorId: null
+        contractorId: null,
+        status: null
       });
     }
 
     const contractor = hiredWorker.contractorId;
-    const isNotice = ['ResignationPending', 'ResignationAccepted'].includes(hiredWorker.status);
 
-    res.json({
-      isWorking: true,
-      isInNoticePeriod: isNotice,
-      currentJob: {
-        jobRole: hiredWorker.jobRole,
-        joinDate: hiredWorker.joinDate,
-        salary: hiredWorker.salary,
-        duration: hiredWorker.duration
-      },
-      lastWorkingDate: isNotice ? hiredWorker.lastWorkingDate : null,
-      contractorName: contractor ? (contractor.companyName || contractor.name) : null,
-      contractorId: hiredWorker.contractorId._id || hiredWorker.contractorId
-    });
+    if (hiredWorker.status === 'Active') {
+      return res.json({
+        isWorking: true,
+        isInNoticePeriod: false,
+        currentJob: {
+          jobRole: hiredWorker.jobRole,
+          joinDate: hiredWorker.joinedAt || hiredWorker.joinDate
+        },
+        lastWorkingDate: null,
+        contractorName: contractor ? (contractor.companyName || contractor.name) : null,
+        contractorId: contractor ? contractor._id : hiredWorker.contractorId,
+        status: hiredWorker.status
+      });
+    } else {
+      return res.json({
+        isWorking: true,
+        isInNoticePeriod: true,
+        currentJob: {
+          jobRole: hiredWorker.jobRole,
+          joinDate: hiredWorker.joinedAt || hiredWorker.joinDate
+        },
+        lastWorkingDate: hiredWorker.lastWorkingDate,
+        contractorName: contractor ? (contractor.companyName || contractor.name) : null,
+        contractorId: contractor ? contractor._id : hiredWorker.contractorId,
+        status: hiredWorker.status
+      });
+    }
   } catch (error) {
     console.error('getWorkingStatus error:', error);
     res.status(500).json({ message: error.message });
@@ -401,6 +416,9 @@ exports.toggleVisibility = async (req, res) => {
 // --- Applications ---
 exports.getMyApplications = async (req, res) => {
   try {
+    const HiredWorker = require('../models/HiredWorker');
+    const ContractorReview = require('../models/ContractorReview');
+
     const applications = await Application.find({ professionalId: req.user.id })
       .populate({
         path: 'jobPostId',
@@ -412,7 +430,22 @@ exports.getMyApplications = async (req, res) => {
       })
       .sort({ appliedAt: -1 });
 
-    const formatted = applications.map(app => {
+    const formatted = await Promise.all(applications.map(async (app) => {
+      // Find matching HiredWorker
+      const hw = await HiredWorker.findOne({ applicationId: app._id });
+      let hiredWorkerId = null;
+      let hasReviewed = false;
+
+      if (hw) {
+        hiredWorkerId = hw._id;
+        const reviewExists = await ContractorReview.findOne({
+          professionalId: req.user.id,
+          contractorId: hw.contractorId,
+          hiredWorkerId: hw._id
+        });
+        hasReviewed = !!reviewExists;
+      }
+
       // Mock the populated structure using snapshot data if the original is deleted
       const mockJobPost = app.jobPostId || {
         _id: 'deleted',
@@ -437,9 +470,11 @@ exports.getMyApplications = async (req, res) => {
         ...app.toObject(),
         jobPostId: mockJobPost,
         contractorId: mockContractor,
-        jobPostExists: !!app.jobPostId
+        jobPostExists: !!app.jobPostId,
+        hiredWorkerId,
+        hasReviewed
       };
-    });
+    }));
 
     res.json(formatted);
   } catch (error) {
@@ -549,6 +584,20 @@ exports.directHireRequest = async (req, res) => {
     
     if (!professional) return res.status(404).json({ message: 'Professional not found' });
 
+    // Check direct hire retry cooldown (7 days block on retry)
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const recentDeclinedRequest = await DirectHireRequest.findOne({
+      contractorId: req.user.id,
+      professionalId,
+      status: 'Rejected',
+      updatedAt: { $gte: sevenDaysAgo }
+    });
+
+    if (recentDeclinedRequest) {
+      const daysLeft = Math.ceil((recentDeclinedRequest.updatedAt.getTime() + 7 * 24 * 60 * 60 * 1000 - Date.now()) / (1000 * 60 * 60 * 24));
+      return res.status(400).json({ message: `Cannot resend request. You must wait ${daysLeft} more day(s) since they declined your last request.` });
+    }
+
     const HiredWorker = require('../models/HiredWorker');
     const activeWorker = await HiredWorker.findOne({
       professionalId,
@@ -627,20 +676,46 @@ exports.getDirectHireRequests = async (req, res) => {
 };
 
 exports.joinDirectHire = async (req, res) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
   try {
     const requestId = req.params.id;
     const professionalId = req.user.id;
 
-    const request = await DirectHireRequest.findOne({ _id: requestId, professionalId });
-    if (!request) return res.status(404).json({ message: 'Request not found' });
-    if (request.status !== 'Pending') return res.status(400).json({ message: `Request is already ${request.status}` });
+    // Transactional block check for existing active join
+    const existingJoin = await HiredWorker.findOne({ 
+      professionalId, 
+      status: 'Active' 
+    }).session(session);
+    
+    if (existingJoin) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(400).json({ message: 'You are already working with a contractor.' });
+    }
+
+    const request = await DirectHireRequest.findOne({ _id: requestId, professionalId }).session(session);
+    if (!request) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(404).json({ message: 'Request not found' });
+    }
+    if (request.status !== 'Pending') {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(400).json({ message: `Request is already ${request.status}` });
+    }
 
     // Check max 2 joined
-    const activeHires = await HiredWorker.countDocuments({ professionalId, status: 'Active' });
-    if (activeHires >= 2) return res.status(400).json({ message: 'You are already joined in 2 active positions.' });
+    const activeHires = await HiredWorker.countDocuments({ professionalId, status: 'Active' }).session(session);
+    if (activeHires >= 2) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(400).json({ message: 'You are already joined in 2 active positions.' });
+    }
 
     request.status = 'Joined';
-    await request.save();
+    await request.save({ session });
 
     const hiredWorker = new HiredWorker({
       contractorId: request.contractorId,
@@ -651,19 +726,19 @@ exports.joinDirectHire = async (req, res) => {
       workLocation: request.workSiteLocation,
       status: 'Active'
     });
-    await hiredWorker.save();
+    await hiredWorker.save({ session });
 
-    const profUser = await User.findById(professionalId);
+    const profUser = await User.findById(professionalId).session(session);
     profUser.currentContractorId = request.contractorId;
     profUser.currentJobRole = request.jobRole;
     profUser.isAvailable = false;
-    await profUser.save();
+    await profUser.save({ session });
 
-    const contractor = await User.findById(request.contractorId);
+    const contractor = await User.findById(request.contractorId).session(session);
     if (contractor) {
       if (!contractor.hiredProfessionals) contractor.hiredProfessionals = [];
       contractor.hiredProfessionals.push(professionalId);
-      await contractor.save();
+      await contractor.save({ session });
     }
 
     const io = getIO();
@@ -671,17 +746,48 @@ exports.joinDirectHire = async (req, res) => {
     // Auto-withdraw other pending requests (Applications & DirectHireRequests)
     await Application.updateMany(
       { professionalId, status: { $in: ['Applied', 'Viewed', 'Shortlisted', 'Hired'] } },
-      { status: 'Withdrawn' }
-    );
-    await DirectHireRequest.updateMany(
-      { professionalId, _id: { $ne: requestId }, status: 'Pending' },
-      { status: 'Withdrawn' }
+      { status: 'Withdrawn' },
+      { session }
     );
 
+    // Auto-withdraw pending direct hire requests from other contractors
+    const otherDirectHiresPending = await DirectHireRequest.find({
+      professionalId,
+      _id: { $ne: requestId },
+      status: 'Pending'
+    }).session(session);
+
+    for (const otherReq of otherDirectHiresPending) {
+      otherReq.status = 'Position Filled';
+      await otherReq.save({ session });
+
+      const contractorNotif = new Notification({
+        userId: otherReq.contractorId,
+        title: 'Direct Hire Request Unavailable',
+        message: `${profUser.name} is no longer available as they have accepted another position.`,
+        type: 'General',
+        actionTab: NOTIFICATION_TABS.CONTRACTOR_BROWSE_PROFESSIONALS || 'browse-professionals'
+      });
+      await contractorNotif.save({ session });
+
+      if (io) {
+        io.to(`user:${otherReq.contractorId}`).emit('notification', { notification: contractorNotif });
+      }
+
+      const otherContractor = await User.findById(otherReq.contractorId).session(session);
+      if (otherContractor && otherContractor.email) {
+        await sendMail({
+          to: otherContractor.email,
+          subject: 'Direct Hire Request Unavailable',
+          html: `<p><strong>${profUser.name}</strong> is no longer available as they have accepted another position.</p>`
+        });
+      }
+    }
+
     if (request.jobPostId) {
-      const jobPost = await JobPost.findById(request.jobPostId);
+      const jobPost = await JobPost.findById(request.jobPostId).session(session);
       if (jobPost) {
-        await JobPost.findByIdAndDelete(jobPost._id);
+        await JobPost.findByIdAndDelete(jobPost._id).session(session);
         console.log('Job post hard deleted after direct hire join:', jobPost._id);
 
         if (io) {
@@ -691,11 +797,11 @@ exports.joinDirectHire = async (req, res) => {
         const otherJobApps = await Application.find({
           jobPostId: jobPost._id,
           status: { $in: ['Applied', 'Viewed', 'Shortlisted'] }
-        });
+        }).session(session);
 
         for (const otherApp of otherJobApps) {
           otherApp.status = 'Position Filled';
-          await otherApp.save();
+          await otherApp.save({ session });
 
           const filledNotification = new Notification({
             userId: otherApp.professionalId,
@@ -704,7 +810,7 @@ exports.joinDirectHire = async (req, res) => {
             message: 'This position has been filled by another candidate. Thank you for your interest.',
             actionTab: NOTIFICATION_TABS.PROFESSIONAL_MY_APPLICATIONS
           });
-          await filledNotification.save();
+          await filledNotification.save({ session });
 
           if (io) {
             io.to(`user:${otherApp.professionalId}`).emit('notification', {
@@ -715,12 +821,13 @@ exports.joinDirectHire = async (req, res) => {
 
         const otherDirectHires = await DirectHireRequest.find({
           jobPostId: jobPost._id,
+          _id: { $ne: requestId },
           status: 'Pending'
-        });
+        }).session(session);
 
         for (const otherReq of otherDirectHires) {
           otherReq.status = 'Position Filled';
-          await otherReq.save();
+          await otherReq.save({ session });
 
           const filledNotification = new Notification({
             userId: otherReq.professionalId,
@@ -729,7 +836,7 @@ exports.joinDirectHire = async (req, res) => {
             message: 'This position has been filled by another candidate. Thank you for your interest.',
             actionTab: NOTIFICATION_TABS.PROFESSIONAL_MY_AVAILABILITY
           });
-          await filledNotification.save();
+          await filledNotification.save({ session });
 
           if (io) {
             io.to(`user:${otherReq.professionalId}`).emit('notification', {
@@ -740,7 +847,7 @@ exports.joinDirectHire = async (req, res) => {
       }
     }
 
-    // Mark availability post as hired instead of deleting
+    // Mark availability post as hired
     await AvailabilityPost.updateMany(
       { professionalId },
       { 
@@ -753,7 +860,8 @@ exports.joinDirectHire = async (req, res) => {
           email: contractor.email,
           hireDate: new Date()
         }
-      }
+      },
+      { session }
     );
 
     // Notify Contractor
@@ -762,22 +870,27 @@ exports.joinDirectHire = async (req, res) => {
       title: 'Professional Has Joined',
       message: `${profUser.name} has accepted your direct hire request and joined as the ${request.jobRole}.`,
       type: 'Job',
-      actionTab: NOTIFICATION_TABS.CONTRACTOR_OVERVIEW // Used to be browse-professionals, but overview has the team list
+      actionTab: NOTIFICATION_TABS.CONTRACTOR_OVERVIEW
     });
-    await notification.save();
+    await notification.save({ session });
 
     if (io) {
       io.to(`user:${request.contractorId}`).emit('notification', { notification });
     }
 
+    await session.commitTransaction();
+    session.endSession();
+
     await sendMail({
-      to: (await User.findById(request.contractorId)).email,
+      to: contractor.email,
       subject: 'Professional Joined',
       html: `<p><strong>${profUser.name}</strong> has joined as <strong>${request.jobRole}</strong>.</p>`
     });
 
     res.json({ message: 'Successfully joined position', request });
   } catch (error) {
+    await session.abortTransaction();
+    session.endSession();
     res.status(500).json({ message: error.message });
   }
 };
@@ -1081,38 +1194,64 @@ exports.getNoticeStatus = async (req, res) => {
 
 // --- Join Job (Professional accepts a Hired status) ---
 exports.joinJob = async (req, res) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
   try {
     const applicationId = req.params.id;
     const professionalId = req.user.id;
 
+    // Transactional block check for existing active join
+    const existingJoin = await HiredWorker.findOne({ 
+      professionalId, 
+      status: 'Active' 
+    }).session(session);
+    
+    if (existingJoin) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(400).json({ message: 'You are already working with a contractor.' });
+    }
+
     // 1. Fetch the application being joined
-    const application = await Application.findOne({ _id: applicationId, professionalId });
-    if (!application) return res.status(404).json({ message: 'Application not found' });
-    if (application.status !== 'Hired') return res.status(400).json({ message: 'You can only join a job you have been hired for' });
+    const application = await Application.findOne({ _id: applicationId, professionalId }).session(session);
+    if (!application) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(404).json({ message: 'Application not found' });
+    }
+    if (application.status !== 'Hired') {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(400).json({ message: 'You can only join a job you have been hired for' });
+    }
 
     // 2. Fetch the job post
-    const jobPost = await JobPost.findById(application.jobPostId);
-    if (!jobPost) return res.status(404).json({ message: 'Job post not found' });
+    const jobPost = await JobPost.findById(application.jobPostId).session(session);
+    if (!jobPost) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(404).json({ message: 'Job post not found' });
+    }
 
     const io = getIO();
 
     // 3. Update this application to 'Joined'
     application.status = 'Joined';
-    await application.save();
+    await application.save({ session });
 
     // 4. Auto-withdraw all other pending/applied/shortlisted applications by this professional
-    const otherApps = await Application.find({
-      professionalId,
-      _id: { $ne: applicationId },
-      status: { $in: ['Applied', 'Viewed', 'Shortlisted'] }
-    });
-    for (const otherApp of otherApps) {
-      otherApp.status = 'Withdrawn';
-      await otherApp.save();
-    }
+    await Application.updateMany(
+      {
+        professionalId,
+        _id: { $ne: applicationId },
+        status: { $in: ['Applied', 'Viewed', 'Shortlisted'] }
+      },
+      { status: 'Withdrawn' },
+      { session }
+    );
 
     // 5. Delete the job post
-    await JobPost.findByIdAndDelete(jobPost._id);
+    await JobPost.findByIdAndDelete(jobPost._id).session(session);
     console.log('Job post hard deleted after professional joined:', jobPost._id);
 
     if (io) {
@@ -1131,20 +1270,20 @@ exports.joinJob = async (req, res) => {
       workLocation: jobPost.workLocation,
       status: 'Active'
     });
-    await hiredWorker.save();
+    await hiredWorker.save({ session });
 
     // 7. Update Professional and Contractor User Models
-    const professional = await User.findById(professionalId);
+    const professional = await User.findById(professionalId).session(session);
     professional.currentContractorId = application.contractorId;
     professional.currentJobRole = jobPost.jobRole;
     professional.isAvailable = false;
-    await professional.save();
+    await professional.save({ session });
 
-    const contractor = await User.findById(application.contractorId);
+    const contractor = await User.findById(application.contractorId).session(session);
     if (contractor) {
       if (!contractor.hiredProfessionals) contractor.hiredProfessionals = [];
       contractor.hiredProfessionals.push(professionalId);
-      await contractor.save();
+      await contractor.save({ session });
     }
 
     // 8. Notify the contractor that the professional has joined
@@ -1156,7 +1295,7 @@ exports.joinJob = async (req, res) => {
       relatedId: jobPost._id,
       actionTab: NOTIFICATION_TABS.CONTRACTOR_JOB_POSTS
     });
-    await contractorNotification.save();
+    await contractorNotification.save({ session });
 
     if (io) {
       io.to(`user:${application.contractorId}`).emit('notification', {
@@ -1169,10 +1308,10 @@ exports.joinJob = async (req, res) => {
       jobPostId: jobPost._id,
       professionalId: { $ne: professionalId },
       status: { $in: ['Applied', 'Viewed', 'Shortlisted', 'Hired'] }
-    });
+    }).session(session);
     for (const otherApp of otherJobApps) {
       otherApp.status = 'Position Filled';
-      await otherApp.save();
+      await otherApp.save({ session });
 
       const filledNotification = new Notification({
         userId: otherApp.professionalId,
@@ -1182,7 +1321,7 @@ exports.joinJob = async (req, res) => {
         relatedId: jobPost._id,
         actionTab: NOTIFICATION_TABS.PROFESSIONAL_MY_APPLICATIONS
       });
-      await filledNotification.save();
+      await filledNotification.save({ session });
 
       if (io) {
         io.to(`user:${otherApp.professionalId}`).emit('notification', {
@@ -1195,11 +1334,11 @@ exports.joinJob = async (req, res) => {
       jobPostId: jobPost._id,
       professionalId: { $ne: professionalId },
       status: 'Pending'
-    });
+    }).session(session);
 
     for (const otherReq of otherDirectHires) {
       otherReq.status = 'Position Filled';
-      await otherReq.save();
+      await otherReq.save({ session });
 
       const filledNotification = new Notification({
         userId: otherReq.professionalId,
@@ -1208,7 +1347,7 @@ exports.joinJob = async (req, res) => {
         message: 'This position has been filled by another candidate. Thank you for your interest.',
         actionTab: NOTIFICATION_TABS.PROFESSIONAL_MY_AVAILABILITY
       });
-      await filledNotification.save();
+      await filledNotification.save({ session });
 
       if (io) {
         io.to(`user:${otherReq.professionalId}`).emit('notification', {
@@ -1217,10 +1356,133 @@ exports.joinJob = async (req, res) => {
       }
     }
 
+    // Mark availability post as hired
+    await AvailabilityPost.updateMany(
+      { professionalId },
+      { 
+        isHired: true,
+        hiredSnapshot: {
+          contractorId: contractor._id,
+          contractorName: contractor.name,
+          companyName: contractor.companyName,
+          phone: contractor.phone,
+          email: contractor.email,
+          hireDate: new Date()
+        }
+      },
+      { session }
+    );
+
+    await session.commitTransaction();
+    session.endSession();
+
+    await sendMail({
+      to: contractor.email,
+      subject: 'Professional Joined',
+      html: `<p><strong>${professional.name}</strong> has joined as <strong>${jobPost.jobRole}</strong>.</p>`
+    });
 
     res.json({ message: 'Successfully joined! Welcome aboard.', hiredWorker });
   } catch (error) {
+    await session.abortTransaction();
+    session.endSession();
     console.error('Join job error:', error);
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// Cancel resignation action
+exports.cancelResignation = async (req, res) => {
+  try {
+    const professionalId = req.user.id;
+    const hiredWorker = await HiredWorker.findOne({
+      professionalId,
+      status: 'ResignationPending'
+    });
+
+    if (!hiredWorker) {
+      return res.status(404).json({ message: 'No pending resignation found.' });
+    }
+
+    hiredWorker.status = 'Active';
+    hiredWorker.resignationReason = undefined;
+    hiredWorker.additionalComments = undefined;
+    hiredWorker.resignationSubmittedDate = undefined;
+    hiredWorker.lastWorkingDate = undefined;
+    await hiredWorker.save();
+
+    // Reset Professional User model notice states
+    const professional = await User.findById(professionalId);
+    if (professional) {
+      professional.isServingNotice = false;
+      professional.noticeStartDate = null;
+      professional.noticeEndDate = null;
+      professional.resignationReason = null;
+      await professional.save();
+    }
+
+    // Restore Application/Direct Hire status from Resigned to Joined
+    const application = await Application.findOne({
+      professionalId,
+      status: 'Resigned'
+    }).sort({ appliedAt: -1 });
+
+    if (application) {
+      application.status = 'Joined';
+      await application.save();
+    } else {
+      const directHire = await DirectHireRequest.findOne({
+        professionalId,
+        status: 'Resigned'
+      }).sort({ updatedAt: -1 });
+      if (directHire) {
+        directHire.status = 'Joined';
+        await directHire.save();
+      }
+    }
+
+    // Add professional back to contractor's hiredProfessionals
+    const contractor = await User.findById(hiredWorker.contractorId);
+    if (contractor) {
+      if (!contractor.hiredProfessionals) contractor.hiredProfessionals = [];
+      if (!contractor.hiredProfessionals.some(id => id.toString() === professionalId)) {
+        contractor.hiredProfessionals.push(professionalId);
+        await contractor.save();
+      }
+    }
+
+    // Notify contractor
+    const notification = new Notification({
+      userId: hiredWorker.contractorId,
+      title: 'Resignation Cancelled',
+      message: `${professional.name} has cancelled their resignation and will continue working with you.`,
+      type: 'General',
+      actionTab: NOTIFICATION_TABS.CONTRACTOR_OVERVIEW || 'overview'
+    });
+    await notification.save();
+
+    const io = getIO();
+    if (io) {
+      io.to(`user:${hiredWorker.contractorId}`).emit('notification', { notification });
+      io.to(`user:${hiredWorker.contractorId}`).emit('contractor:resignationCancelled', { professionalId });
+    }
+
+    if (contractor && contractor.email) {
+      await sendMail({
+        to: contractor.email,
+        subject: 'Resignation Cancelled',
+        html: `
+          <div style="font-family: Arial, sans-serif;">
+            <h2 style="color: #1E3A5F; border-bottom: 2px solid #F97316; padding-bottom: 10px;">Resignation Cancelled</h2>
+            <p><strong>${professional.name}</strong> has cancelled their resignation and will continue working with you as <strong>${hiredWorker.jobRole}</strong>.</p>
+            <p>Their availability and active status have been restored.</p>
+          </div>
+        `
+      });
+    }
+
+    res.json({ message: 'Resignation cancelled successfully.' });
+  } catch (error) {
     res.status(500).json({ message: error.message });
   }
 };

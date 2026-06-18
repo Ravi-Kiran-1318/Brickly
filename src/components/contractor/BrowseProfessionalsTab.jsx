@@ -12,6 +12,8 @@ const BrowseProfessionalsTab = () => {
   const [posts, setPosts] = useState([]);
   const [jobs, setJobs] = useState([]);
   const [hiredProfessionalIds, setHiredProfessionalIds] = useState(new Set());
+  const [rejectedProfessionalIds, setRejectedProfessionalIds] = useState(new Set());
+  const [pendingProfessionalIds, setPendingProfessionalIds] = useState(new Set());
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState({ jobRole: '', minExp: '', location: '' });
   const [hireModalData, setHireModalData] = useState(null);
@@ -41,10 +43,26 @@ const BrowseProfessionalsTab = () => {
   const fetchSentDirectHireRequests = async () => {
     try {
       const res = await api.get('/api/contractor/direct-hire-requests/sent');
-      const hiredIds = res.data
-        .filter(req => ['Pending', 'Joined', 'Rejected'].includes(req.status))
-        .map(req => req.professionalId?._id || req.professionalId);
-      setHiredProfessionalIds(new Set(hiredIds));
+      const hiredIds = new Set();
+      const rejectedIds = new Set();
+      const pendingIds = new Set();
+      
+      res.data.forEach(req => {
+        const profId = req.professionalId?._id || req.professionalId;
+        if (profId) {
+          if (req.status === 'Joined') {
+            hiredIds.add(profId);
+          } else if (req.status === 'Rejected') {
+            rejectedIds.add(profId);
+          } else if (req.status === 'Pending') {
+            pendingIds.add(profId);
+          }
+        }
+      });
+      
+      setHiredProfessionalIds(hiredIds);
+      setRejectedProfessionalIds(rejectedIds);
+      setPendingProfessionalIds(pendingIds);
     } catch (err) {
       console.error('Failed to fetch sent direct hire requests', err);
     }
@@ -90,7 +108,7 @@ const BrowseProfessionalsTab = () => {
         jobPostId: selectedJobId || null
       });
       toast.success("Direct hire request sent successfully");
-      setHiredProfessionalIds(prev => new Set([...prev, post.professionalId._id]));
+      setPendingProfessionalIds(prev => new Set([...prev, post.professionalId._id]));
       setHireModalData(null);
       // Removed fetchProfessionals() to not disrupt the UI, state handles it
     } catch (err) {
@@ -141,7 +159,14 @@ const BrowseProfessionalsTab = () => {
                   {post.professionalId?.name?.charAt(0) || 'P'}
                 </div>
                 <div>
-                  <h4 className="font-black text-primary dark:text-white uppercase tracking-tight">{post.professionalId?.name || 'Professional'}</h4>
+                  <h4 className="font-black text-primary dark:text-white uppercase tracking-tight flex items-center gap-1.5 flex-wrap">
+                    {post.professionalId?.name || 'Professional'}
+                    {post.professionalId?.isTrustedProfessional && (
+                      <span className="bg-yellow-500 text-white text-[9px] font-black uppercase px-2 py-0.5 rounded-md flex items-center gap-0.5 shadow-sm shadow-yellow-500/30 shrink-0" title="Trusted Professional Badge">
+                        ★ Trusted
+                      </span>
+                    )}
+                  </h4>
                   <p className="text-xs font-bold text-accent uppercase tracking-widest">{post.jobRole}</p>
                 </div>
               </div>
@@ -180,6 +205,20 @@ const BrowseProfessionalsTab = () => {
                   className="flex-[2] py-3 px-2 rounded-xl text-xs font-black bg-green-500 text-white flex items-center justify-center gap-1.5 shadow-lg shadow-green-500/10 cursor-not-allowed opacity-90 transition-all"
                 >
                   <IconCheck size={16} /> Hired
+                </button>
+              ) : pendingProfessionalIds.has(post.professionalId?._id) ? (
+                <button 
+                  disabled
+                  className="flex-[2] py-3 px-2 rounded-xl text-xs font-black bg-orange-100 text-orange-600 dark:bg-orange-950/20 dark:text-orange-400 flex items-center justify-center gap-1.5 cursor-not-allowed transition-all animate-pulse"
+                >
+                  Pending Response
+                </button>
+              ) : rejectedProfessionalIds.has(post.professionalId?._id) ? (
+                <button 
+                  disabled
+                  className="flex-[2] py-3 px-2 rounded-xl text-xs font-black bg-slate-200 dark:bg-slate-850 text-slate-400 flex items-center justify-center gap-1.5 cursor-not-allowed transition-all"
+                >
+                  Declined
                 </button>
               ) : post.professionalId?.isServingNotice ? (
                 <button 
