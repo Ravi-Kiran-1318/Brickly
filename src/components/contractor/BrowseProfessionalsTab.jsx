@@ -11,13 +11,13 @@ import {
 const BrowseProfessionalsTab = () => {
   const [posts, setPosts] = useState([]);
   const [jobs, setJobs] = useState([]);
-  const [hiredProfessionalIds, setHiredProfessionalIds] = useState(new Set());
-  const [rejectedProfessionalIds, setRejectedProfessionalIds] = useState(new Set());
-  const [pendingProfessionalIds, setPendingProfessionalIds] = useState(new Set());
+  const [sentRequests, setSentRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState({ jobRole: '', minExp: '', location: '' });
   const [hireModalData, setHireModalData] = useState(null);
   const [selectedJobId, setSelectedJobId] = useState('');
+  const [highlightedIds, setHighlightedIds] = useState(new Set());
+  const [noticePeriodDays, setNoticePeriodDays] = useState(7);
 
   useEffect(() => {
     fetchProfessionals();
@@ -33,36 +33,118 @@ const BrowseProfessionalsTab = () => {
       }
     };
 
+    const handleNewProfessionalAvailable = (data) => {
+      if (!data.professionalId) return;
+      
+      const newCardId = data.post?._id || data.professionalId;
+      toast.success(`A new professional ${data.name || 'Professional'} is now available as ${data.jobRole || 'Professional'}!`);
+      
+      const newCard = {
+        _id: newCardId,
+        professionalId: {
+          _id: data.professionalId,
+          name: data.name,
+          jobRole: data.jobRole,
+          yearsOfExperience: data.experience,
+          locationPreference: data.location,
+          isVisible: data.isVisible,
+          avatar: data.avatar || null,
+          isEmployed: data.isEmployed || false,
+          isServingNotice: data.isServingNotice || false,
+          noticeEndDate: data.noticeEndDate || null
+        },
+        jobRole: data.jobRole,
+        yearsOfExperience: data.experience,
+        locationPreference: data.location,
+        expectedSalary: data.post?.expectedSalary || 'Negotiable',
+        availableFrom: data.post?.availableFrom || new Date().toISOString(),
+        skillTags: data.post?.skillTags || []
+      };
+
+      setPosts(prev => {
+        if (prev.some(p => (p.professionalId?._id || p.professionalId) === data.professionalId)) {
+          return prev;
+        }
+        return [newCard, ...prev];
+      });
+
+      setHighlightedIds(prev => {
+        const next = new Set(prev);
+        next.add(newCardId);
+        return next;
+      });
+
+      setTimeout(() => {
+        setHighlightedIds(prev => {
+          const next = new Set(prev);
+          next.delete(newCardId);
+          return next;
+        });
+      }, 2000);
+    };
+
+    const handleProfessionalWentOffline = (data) => {
+      if (!data.professionalId) return;
+      setPosts(prev => prev.filter(p => (p.professionalId?._id || p.professionalId) !== data.professionalId));
+    };
+
     socket.on('contractor:newAvailability', handleNewAvailability);
+    socket.on('newProfessionalAvailable', handleNewProfessionalAvailable);
+    socket.on('professionalWentOffline', handleProfessionalWentOffline);
 
     return () => {
       socket.off('contractor:newAvailability', handleNewAvailability);
+      socket.off('newProfessionalAvailable', handleNewProfessionalAvailable);
+      socket.off('professionalWentOffline', handleProfessionalWentOffline);
     };
   }, []);
+
+  const isRecentRejection = (req) => {
+    if (req.status !== 'Rejected') return false;
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    const dateToCheck = req.updatedAt || req.createdAt;
+    return new Date(dateToCheck) >= sevenDaysAgo;
+  };
+
+  const getProfessionalStatus = (pId) => {
+    const hasJoined = sentRequests.some(r => {
+      const id = r.professionalId?._id || r.professionalId;
+      return id === pId && r.status === 'Joined';
+    });
+    if (hasJoined) return 'Hired';
+
+    const hasPending = sentRequests.some(r => {
+      const id = r.professionalId?._id || r.professionalId;
+      return id === pId && r.status === 'Pending';
+    });
+    if (hasPending) return 'Pending';
+
+    const generalBlocked = sentRequests.some(r => {
+      const id = r.professionalId?._id || r.professionalId;
+      return id === pId && !r.jobPostId && isRecentRejection(r);
+    });
+
+    if (!generalBlocked) return 'Available';
+
+    const hasUnblockedJob = jobs.some(job => {
+      const isJobBlocked = sentRequests.some(r => {
+        const id = r.professionalId?._id || r.professionalId;
+        const rJobId = r.jobPostId?._id || r.jobPostId;
+        return id === pId && rJobId === job._id && isRecentRejection(r);
+      });
+      return !isJobBlocked;
+    });
+
+    if (hasUnblockedJob) return 'Available';
+
+    return 'Declined';
+  };
 
   const fetchSentDirectHireRequests = async () => {
     try {
       const res = await api.get('/api/contractor/direct-hire-requests/sent');
-      const hiredIds = new Set();
-      const rejectedIds = new Set();
-      const pendingIds = new Set();
-      
-      res.data.forEach(req => {
-        const profId = req.professionalId?._id || req.professionalId;
-        if (profId) {
-          if (req.status === 'Joined') {
-            hiredIds.add(profId);
-          } else if (req.status === 'Rejected') {
-            rejectedIds.add(profId);
-          } else if (req.status === 'Pending') {
-            pendingIds.add(profId);
-          }
-        }
-      });
-      
-      setHiredProfessionalIds(hiredIds);
-      setRejectedProfessionalIds(rejectedIds);
-      setPendingProfessionalIds(pendingIds);
+      setSentRequests(res.data);
     } catch (err) {
       console.error('Failed to fetch sent direct hire requests', err);
     }
@@ -93,24 +175,49 @@ const BrowseProfessionalsTab = () => {
   const openHireModal = (post) => {
     if (!post?.professionalId?._id) return toast.error("Professional details not found");
     setHireModalData(post);
-    setSelectedJobId('');
+    setNoticePeriodDays(7);
+    
+    // Find first available option when modal is opened
+    const pId = post.professionalId._id;
+    const isGeneralBlocked = sentRequests.some(r => {
+      const id = r.professionalId?._id || r.professionalId;
+      return id === pId && !r.jobPostId && (r.status === 'Pending' || isRecentRejection(r));
+    });
+    
+    if (!isGeneralBlocked) {
+      setSelectedJobId('');
+    } else {
+      const firstAvailableJob = jobs.find(job => {
+        const isJobBlocked = sentRequests.some(r => {
+          const id = r.professionalId?._id || r.professionalId;
+          const rJobId = r.jobPostId?._id || r.jobPostId;
+          return id === pId && rJobId === job._id && (r.status === 'Pending' || isRecentRejection(r));
+        });
+        return !isJobBlocked;
+      });
+      setSelectedJobId(firstAvailableJob ? firstAvailableJob._id : '');
+    }
   };
 
   const handleConfirmHire = async () => {
     const post = hireModalData;
     if (!post) return;
     try {
-      await api.post(`/api/contractor/direct-hire/${post.professionalId._id}`, {
+      const res = await api.post(`/api/contractor/direct-hire/${post.professionalId._id}`, {
         jobRole: post.jobRole,
         workSiteLocation: post.locationPreference,
         salary: post.expectedSalary,
         duration: 'Long term',
-        jobPostId: selectedJobId || null
+        jobPostId: selectedJobId || null,
+        noticePeriodDays: parseInt(noticePeriodDays) || 7
       });
       toast.success("Direct hire request sent successfully");
-      setPendingProfessionalIds(prev => new Set([...prev, post.professionalId._id]));
+      if (res.data?.request) {
+        setSentRequests(prev => [res.data.request, ...prev]);
+      } else {
+        fetchSentDirectHireRequests();
+      }
       setHireModalData(null);
-      // Removed fetchProfessionals() to not disrupt the UI, state handles it
     } catch (err) {
       toast.error(err.response?.data?.message || "Hiring failed");
     }
@@ -151,7 +258,11 @@ const BrowseProfessionalsTab = () => {
           <motion.div 
             layout 
             key={post._id} 
-            className="bg-white dark:bg-slate-900 p-6 rounded-[32px] border border-slate-200 dark:border-slate-800 flex flex-col justify-between hover:shadow-2xl hover:shadow-slate-200/50 dark:hover:shadow-none transition-all group"
+            className={`bg-white dark:bg-slate-900 p-6 rounded-[32px] border flex flex-col justify-between hover:shadow-2xl hover:shadow-slate-200/50 dark:hover:shadow-none transition-all group ${
+              highlightedIds.has(post._id) 
+                ? 'border-green-500 shadow-[0_0_20px_rgba(34,197,94,0.6)] ring-4 ring-green-500/20 animate-pulse' 
+                : 'border-slate-200 dark:border-slate-800'
+            }`}
           >
             <div>
               <div className="flex items-center gap-4 mb-5">
@@ -164,6 +275,11 @@ const BrowseProfessionalsTab = () => {
                     {post.professionalId?.isTrustedProfessional && (
                       <span className="bg-yellow-500 text-white text-[9px] font-black uppercase px-2 py-0.5 rounded-md flex items-center gap-0.5 shadow-sm shadow-yellow-500/30 shrink-0" title="Trusted Professional Badge">
                         ★ Trusted
+                      </span>
+                    )}
+                    {post.isCrewPost && (
+                      <span className="bg-blue-600 text-white text-[9px] font-black uppercase px-2 py-0.5 rounded-md flex items-center gap-0.5 shadow-sm shadow-blue-500/30 shrink-0" title={`Crew of ${post.crewSize}`}>
+                        👥 Crew of {post.crewSize}
                       </span>
                     )}
                   </h4>
@@ -199,43 +315,92 @@ const BrowseProfessionalsTab = () => {
               <button className="flex-1 py-3 px-2 rounded-xl text-xs font-black bg-slate-50 dark:bg-slate-800 text-primary dark:text-white flex items-center justify-center gap-1.5 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 transition-all">
                 <IconDownload size={16} /> Resume
               </button>
-              {hiredProfessionalIds.has(post.professionalId?._id) ? (
-                <button 
-                  disabled
-                  className="flex-[2] py-3 px-2 rounded-xl text-xs font-black bg-green-500 text-white flex items-center justify-center gap-1.5 shadow-lg shadow-green-500/10 cursor-not-allowed opacity-90 transition-all"
-                >
-                  <IconCheck size={16} /> Hired
-                </button>
-              ) : pendingProfessionalIds.has(post.professionalId?._id) ? (
-                <button 
-                  disabled
-                  className="flex-[2] py-3 px-2 rounded-xl text-xs font-black bg-orange-100 text-orange-600 dark:bg-orange-950/20 dark:text-orange-400 flex items-center justify-center gap-1.5 cursor-not-allowed transition-all animate-pulse"
-                >
-                  Pending Response
-                </button>
-              ) : rejectedProfessionalIds.has(post.professionalId?._id) ? (
-                <button 
-                  disabled
-                  className="flex-[2] py-3 px-2 rounded-xl text-xs font-black bg-slate-200 dark:bg-slate-850 text-slate-400 flex items-center justify-center gap-1.5 cursor-not-allowed transition-all"
-                >
-                  Declined
-                </button>
-              ) : post.professionalId?.isServingNotice ? (
-                <button 
-                  disabled
-                  className="flex-[2] py-3 px-2 rounded-xl text-xs font-black bg-slate-200 dark:bg-slate-800 text-slate-400 flex items-center justify-center gap-1.5 cursor-not-allowed transition-all"
-                  title={`Serving notice until ${new Date(post.professionalId.noticeEndDate).toLocaleDateString()}`}
-                >
-                  Notice Period
-                </button>
-              ) : (
-                <button 
-                  onClick={() => openHireModal(post)}
-                  className="flex-[2] py-3 px-2 rounded-xl text-xs font-black bg-accent text-white flex items-center justify-center gap-1.5 shadow-lg shadow-orange-500/10 hover:bg-orange-600 transition-all"
-                >
-                  Hire Now
-                </button>
-              )}
+              {(() => {
+                const status = getProfessionalStatus(post.professionalId?._id);
+                if (status === 'Hired') {
+                  return (
+                    <button 
+                      disabled
+                      className="flex-[2] py-3 px-2 rounded-xl text-xs font-black bg-green-500 text-white flex items-center justify-center gap-1.5 shadow-lg shadow-green-500/10 cursor-not-allowed opacity-90 transition-all"
+                    >
+                      <IconCheck size={16} /> Hired
+                    </button>
+                  );
+                }
+                if (post.professionalId?.isServingNotice) {
+                  return (
+                    <button 
+                      disabled
+                      className="flex-[2] py-3 px-2 rounded-xl text-xs font-black bg-slate-200 dark:bg-slate-800 text-slate-400 flex items-center justify-center gap-1.5 cursor-not-allowed transition-all"
+                      title={`Serving notice until ${new Date(post.professionalId.noticeEndDate).toLocaleDateString()}`}
+                    >
+                      Notice Period
+                    </button>
+                  );
+                }
+                if (post.professionalId?.isEmployed) {
+                  return (
+                    <button 
+                      disabled
+                      className="flex-[2] py-3 px-2 rounded-xl text-xs font-black bg-slate-200 dark:bg-slate-800 text-slate-400 flex items-center justify-center gap-1.5 cursor-not-allowed transition-all"
+                      title="Candidate is currently employed by another contractor."
+                    >
+                      Employed
+                    </button>
+                  );
+                }
+                const stats = post.professionalId?.directHireStats;
+                if (stats?.cooldownActive) {
+                  return (
+                    <button 
+                      disabled
+                      className="flex-[2] py-3 px-2 rounded-xl text-xs font-black bg-slate-200 dark:bg-slate-800 text-slate-400 flex items-center justify-center gap-1.5 cursor-not-allowed transition-all"
+                      title="Direct hire cooldown is active. You can retry after 48 hours."
+                    >
+                      Retry in {stats.cooldownHoursLeft}h
+                    </button>
+                  );
+                }
+                if (stats?.totalAttempts >= 3) {
+                  return (
+                    <button 
+                      disabled
+                      className="flex-[2] py-3 px-2 rounded-xl text-xs font-black bg-slate-200 dark:bg-slate-800 text-slate-400 flex items-center justify-center gap-1.5 cursor-not-allowed transition-all"
+                      title="Maximum number of direct hire attempts (3) has been reached."
+                    >
+                      Max Requests Sent
+                    </button>
+                  );
+                }
+                if (status === 'Pending') {
+                  return (
+                    <button 
+                      disabled
+                      className="flex-[2] py-3 px-2 rounded-xl text-xs font-black bg-orange-100 text-orange-600 dark:bg-orange-950/20 dark:text-orange-400 flex items-center justify-center gap-1.5 cursor-not-allowed transition-all animate-pulse"
+                    >
+                      Pending Response
+                    </button>
+                  );
+                }
+                if (status === 'Declined') {
+                  return (
+                    <button 
+                      disabled
+                      className="flex-[2] py-3 px-2 rounded-xl text-xs font-black bg-slate-200 dark:bg-slate-850 text-slate-400 flex items-center justify-center gap-1.5 cursor-not-allowed transition-all"
+                    >
+                      Declined
+                    </button>
+                  );
+                }
+                return (
+                  <button 
+                    onClick={() => openHireModal(post)}
+                    className="flex-[2] py-3 px-2 rounded-xl text-xs font-black bg-accent text-white flex items-center justify-center gap-1.5 shadow-lg shadow-orange-500/10 hover:bg-orange-600 transition-all"
+                  >
+                    Hire Now
+                  </button>
+                );
+              })()}
             </div>
           </motion.div>
         )) : (
@@ -269,13 +434,71 @@ const BrowseProfessionalsTab = () => {
                   onChange={(e) => setSelectedJobId(e.target.value)}
                   className="w-full p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 font-bold text-primary dark:text-white outline-none focus:ring-4 focus:ring-accent/10 transition-all"
                 >
-                  <option value="">No specific job post</option>
-                  {jobs.map(job => (
-                    <option key={job._id} value={job._id}>
-                      {job.jobRole} ({job.workLocation})
-                    </option>
-                  ))}
+                  {(() => {
+                    const pId = hireModalData.professionalId?._id;
+                    const r = sentRequests.find(req => {
+                      const id = req.professionalId?._id || req.professionalId;
+                      return id === pId && !req.jobPostId;
+                    });
+                    let disabled = false;
+                    let suffix = "";
+                    if (r) {
+                      if (r.status === 'Pending') {
+                        disabled = true;
+                        suffix = " (Pending Response)";
+                      } else if (isRecentRejection(r)) {
+                        disabled = true;
+                        const dateToCheck = r.updatedAt || r.createdAt;
+                        const daysLeft = Math.ceil((new Date(dateToCheck).getTime() + 7 * 24 * 60 * 60 * 1000 - Date.now()) / (1000 * 60 * 60 * 24));
+                        suffix = ` (Declined - Wait ${daysLeft}d)`;
+                      }
+                    }
+                    return (
+                      <option value="" disabled={disabled}>
+                        No specific job post{suffix}
+                      </option>
+                    );
+                  })()}
+                  {jobs.map(job => {
+                    const pId = hireModalData.professionalId?._id;
+                    const r = sentRequests.find(req => {
+                      const id = req.professionalId?._id || req.professionalId;
+                      const rJobId = req.jobPostId?._id || req.jobPostId;
+                      return id === pId && rJobId === job._id;
+                    });
+                    let disabled = false;
+                    let suffix = "";
+                    if (r) {
+                      if (r.status === 'Pending') {
+                        disabled = true;
+                        suffix = " (Pending Response)";
+                      } else if (isRecentRejection(r)) {
+                        disabled = true;
+                        const dateToCheck = r.updatedAt || r.createdAt;
+                        const daysLeft = Math.ceil((new Date(dateToCheck).getTime() + 7 * 24 * 60 * 60 * 1000 - Date.now()) / (1000 * 60 * 60 * 24));
+                        suffix = ` (Declined - Wait ${daysLeft}d)`;
+                      }
+                    }
+                    return (
+                      <option key={job._id} value={job._id} disabled={disabled}>
+                        {job.jobRole} ({job.workLocation}){suffix}
+                      </option>
+                    );
+                  })}
                 </select>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">Notice Period (Days)</label>
+                <input 
+                  type="number"
+                  min="0"
+                  max="30"
+                  value={noticePeriodDays}
+                  onChange={(e) => setNoticePeriodDays(e.target.value)}
+                  placeholder="e.g. 7"
+                  className="w-full p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 font-bold text-primary dark:text-white outline-none focus:ring-4 focus:ring-accent/10 transition-all"
+                />
               </div>
             </div>
 

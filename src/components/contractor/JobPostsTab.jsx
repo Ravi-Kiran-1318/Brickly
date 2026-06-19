@@ -61,9 +61,11 @@ const JobPostsTab = () => {
   const [selectedApplicant, setSelectedApplicant] = useState(null);
   const [selectedJobId, setSelectedJobId] = useState(null);
   const [applicantFilter, setApplicantFilter] = useState('All');
+  const [applicantSort, setApplicantSort] = useState('recent');
   const [formData, setFormData] = useState({
     jobRole: '', workLocation: '', salary: '', 
-    salaryType: 'monthly', duration: '', requiredSkills: ''
+    salaryType: 'monthly', duration: '', requiredSkills: '', startDate: '',
+    noticePeriodDays: 7
   });
 
   useEffect(() => {
@@ -73,10 +75,17 @@ const JobPostsTab = () => {
       setJobs(prev => prev.filter(job => job._id !== data.jobPostId));
     };
 
+    const handleShortlistedCandidateAvailable = (data) => {
+      toast.success(`A shortlisted candidate is now available to join immediately!`);
+      fetchJobs();
+    };
+
     socket.on('jobPostDeleted', handleJobPostDeleted);
+    socket.on('shortlistedCandidateAvailable', handleShortlistedCandidateAvailable);
 
     return () => {
       socket.off('jobPostDeleted', handleJobPostDeleted);
+      socket.off('shortlistedCandidateAvailable', handleShortlistedCandidateAvailable);
     };
   }, []);
 
@@ -96,11 +105,17 @@ const JobPostsTab = () => {
     try {
       const payload = {
         ...formData,
-        requiredSkills: formData.requiredSkills.split(',').map(s => s.trim())
+        requiredSkills: formData.requiredSkills.split(',').map(s => s.trim()),
+        noticePeriodDays: parseInt(formData.noticePeriodDays) || 7
       };
       await api.post('/api/contractor/jobs', payload);
       toast.success("Job posted successfully!");
       setShowForm(false);
+      setFormData({
+        jobRole: '', workLocation: '', salary: '', 
+        salaryType: 'monthly', duration: '', requiredSkills: '', startDate: '',
+        noticePeriodDays: 7
+      });
       fetchJobs();
     } catch (err) {
       toast.error("Failed to post job");
@@ -161,6 +176,26 @@ const JobPostsTab = () => {
     } catch (err) {
       toast.error("Failed to shortlist");
     }
+  };
+
+  const getSortedApplicants = (applicants) => {
+    if (!applicants) return [];
+    const filtered = applicants.filter(app => applicantFilter === 'All' || app.status === applicantFilter);
+    return [...filtered].sort((a, b) => {
+      if (applicantSort === 'recent') {
+        return new Date(b.createdAt) - new Date(a.createdAt);
+      }
+      if (applicantSort === 'experience_desc') {
+        return (b.professionalId?.yearsOfExperience || 0) - (a.professionalId?.yearsOfExperience || 0);
+      }
+      if (applicantSort === 'experience_asc') {
+        return (a.professionalId?.yearsOfExperience || 0) - (b.professionalId?.yearsOfExperience || 0);
+      }
+      if (applicantSort === 'rating_desc') {
+        return (b.professionalId?.averageRating || 0) - (a.professionalId?.averageRating || 0);
+      }
+      return 0;
+    });
   };
 
   const openProfileModal = (applicant, jobId) => {
@@ -232,8 +267,16 @@ const JobPostsTab = () => {
               <input required name="duration" value={formData.duration} onChange={(e) => setFormData({...formData, duration: e.target.value})} placeholder="e.g. 3 Months" className="w-full p-4 rounded-2xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 font-bold text-primary dark:text-white outline-none focus:ring-4 focus:ring-accent/10 transition-all" />
             </div>
             <div className="space-y-2">
+              <label className="text-sm font-bold text-slate-500 uppercase tracking-tighter">Notice Period (Days)</label>
+              <input type="number" min="0" max="30" name="noticePeriodDays" value={formData.noticePeriodDays} onChange={(e) => setFormData({...formData, noticePeriodDays: e.target.value})} placeholder="e.g. 7" className="w-full p-4 rounded-2xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 font-bold text-primary dark:text-white outline-none focus:ring-4 focus:ring-accent/10 transition-all" />
+            </div>
+            <div className="space-y-2">
               <label className="text-sm font-bold text-slate-500 uppercase tracking-tighter">Skills (Comma separated)</label>
               <input name="requiredSkills" value={formData.requiredSkills} onChange={(e) => setFormData({...formData, requiredSkills: e.target.value})} placeholder="Masonry, Tiles, Plastering" className="w-full p-4 rounded-2xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 font-bold text-primary dark:text-white outline-none focus:ring-4 focus:ring-accent/10 transition-all" />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-bold text-slate-500 uppercase tracking-tighter">Job Start Date</label>
+              <input type="date" required name="startDate" value={formData.startDate} onChange={(e) => setFormData({...formData, startDate: e.target.value})} className="w-full p-4 rounded-2xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 font-bold text-primary dark:text-white outline-none focus:ring-4 focus:ring-accent/10 transition-all" />
             </div>
             <div className="md:col-span-2">
               <button type="submit" className="w-full py-4 bg-primary text-white rounded-2xl font-black mt-2 hover:bg-slate-800 transition-all">Create Job Post</button>
@@ -289,23 +332,34 @@ const JobPostsTab = () => {
                   className="border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-black/20 overflow-hidden"
                 >
                   <div className="p-8 space-y-4 text-slate-500">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                      <h4 className="text-sm font-black uppercase tracking-widest text-slate-400">Applicant List</h4>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        {['All', 'Applied', 'Shortlisted', 'Hired'].map(f => (
-                          <button
-                            key={f}
-                            onClick={() => setApplicantFilter(f)}
-                            className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${applicantFilter === f ? 'bg-primary text-white shadow-md' : 'bg-white dark:bg-slate-800 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700'}`}
-                          >
-                            {f}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    {job.applicants && job.applicants.length > 0 ? (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-                        {job.applicants.filter(app => applicantFilter === 'All' || app.status === applicantFilter).map((app) => (
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                          <h4 className="text-sm font-black uppercase tracking-widest text-slate-400">Applicant List</h4>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            {['All', 'Applied', 'Shortlisted', 'Hired'].map(f => (
+                              <button
+                                key={f}
+                                onClick={() => setApplicantFilter(f)}
+                                className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${applicantFilter === f ? 'bg-primary text-white shadow-md' : 'bg-white dark:bg-slate-800 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700'}`}
+                              >
+                                {f}
+                              </button>
+                            ))}
+                            
+                            <select
+                              value={applicantSort}
+                              onChange={(e) => setApplicantSort(e.target.value)}
+                              className="bg-white dark:bg-slate-800 text-slate-500 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-xs font-bold focus:ring-2 focus:ring-accent outline-none"
+                            >
+                              <option value="recent">Most Recent</option>
+                              <option value="experience_desc">Most Experienced</option>
+                              <option value="experience_asc">Least Experienced</option>
+                              <option value="rating_desc">Highest Rated</option>
+                            </select>
+                          </div>
+                        </div>
+                        {job.applicants && job.applicants.length > 0 ? (
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                            {getSortedApplicants(job.applicants).map((app) => (
                            <div key={app._id} className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-slate-800 flex flex-col justify-between shadow-sm hover:shadow-md transition-all gap-4">
                              <div className="space-y-3">
                                <div className="flex items-center justify-between">

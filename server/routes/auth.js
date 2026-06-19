@@ -138,6 +138,41 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
 
+    // Bypass OTP for specific test accounts
+    const bypassOTPEmails = [
+      'rkgit7767@gmail.com',
+      'professional20.test@gmail.com',
+      'prashanthgedda@gmail.com',
+      'contractor25.test@gmail.com'
+    ];
+
+    if (bypassOTPEmails.includes(email.toLowerCase().trim())) {
+      const token = jwt.sign(
+        { 
+          id: user._id, 
+          role: user.role,
+          name: user.name,
+          phoneVerified: user.phoneVerified,
+          isVerified: user.isVerified
+        },
+        process.env.JWT_SECRET,
+        { expiresIn: '7d' }
+      );
+
+      return res.status(200).json({
+        token,
+        user: {
+          id: user._id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          phoneVerified: user.phoneVerified,
+          isVerified: user.isVerified,
+          jobRole: user.jobRole
+        }
+      });
+    }
+
     // Generate and send OTP for 2FA
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     await OTP.deleteMany({ email });

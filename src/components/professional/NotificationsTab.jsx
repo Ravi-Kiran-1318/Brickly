@@ -57,6 +57,13 @@ const NotificationsTab = ({ setUnreadCount, setActiveTab }) => {
         setUnreadCount(prev => Math.max(0, prev - 1));
       }
       if (notification.actionTab && setActiveTab) {
+        if (notification.title === 'Notice Period Complete') {
+          localStorage.setItem('showNoticeCompleteBanner', 'true');
+        }
+        if (notification.title === 'Contractor Replied to Your Review') {
+          localStorage.setItem('reviewsSubTab', 'left');
+          localStorage.setItem('highlightReviewId', notification.relatedId);
+        }
         setActiveTab(notification.actionTab);
         if (notification.relatedId) {
           setTimeout(() => {

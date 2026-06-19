@@ -7,7 +7,8 @@ import api from '../api';
 import toast, { Toaster } from 'react-hot-toast';
 import { 
   IconBriefcase, IconCalendarEvent, IconClipboardText, IconBell, 
-  IconLogout, IconMenu2, IconX, IconSun, IconMoon, IconUserCircle
+  IconLogout, IconMenu2, IconX, IconSun, IconMoon, IconUserCircle,
+  IconAlertTriangle, IconStar
 } from '@tabler/icons-react';
 import { useTheme } from '../context/ThemeContext';
 import ThemeToggle from '../components/ThemeToggle';
@@ -19,7 +20,7 @@ import ApplicationsTab from '../components/professional/ApplicationsTab';
 import NotificationsTab from '../components/professional/NotificationsTab';
 import SettingsTab from '../components/professional/SettingsTab';
 import ReviewsTab from '../components/professional/ReviewsTab';
-import { IconStar } from '@tabler/icons-react';
+import DisputesTab from '../components/DisputesTab';
 
 const ProfessionalDashboard = () => {
   const { user, logout } = useAuth();
@@ -124,6 +125,7 @@ const ProfessionalDashboard = () => {
     { id: NOTIFICATION_TABS.PROFESSIONAL_MY_APPLICATIONS, label: 'Applications', icon: IconClipboardText },
     { id: NOTIFICATION_TABS.PROFESSIONAL_REVIEWS, label: 'My Reviews', icon: IconStar },
     { id: 'settings', label: 'Settings', icon: IconUserCircle },
+    { id: 'disputes', label: 'Disputes', icon: IconAlertTriangle },
   ];
 
   const renderActiveTab = () => {
@@ -133,6 +135,7 @@ const ProfessionalDashboard = () => {
       case NOTIFICATION_TABS.PROFESSIONAL_MY_APPLICATIONS: return <ApplicationsTab openMapJobId={openMapJobId} setOpenMapJobId={setOpenMapJobId} />;
       case NOTIFICATION_TABS.PROFESSIONAL_REVIEWS: return <ReviewsTab />;
       case 'settings': return <SettingsTab />;
+      case 'disputes': return <DisputesTab />;
       case NOTIFICATION_TABS.PROFESSIONAL_NOTIFICATIONS: return <NotificationsTab setUnreadCount={setUnreadCount} setActiveTab={setActiveTab} />;
       default: return <JobsFeedTab />;
     }

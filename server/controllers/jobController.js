@@ -85,7 +85,7 @@ exports.createJob = async (req, res) => {
 exports.getMyJobs = async (req, res) => {
   const HiredWorker = require('../models/HiredWorker');
   const jobs = await JobPost.find({ contractorId: req.user.id })
-    .populate('applicants.professionalId', 'name phone email jobRole yearsOfExperience locationPreference qualification about isServingNotice noticeEndDate isTrustedProfessional averageRating totalReviews')
+    .populate('applicants.professionalId', 'name phone email jobRole yearsOfExperience locationPreference qualification about isServingNotice noticeStartDate noticeEndDate isTrustedProfessional averageRating totalReviews')
     .sort({ createdAt: -1 });
 
   // Map over applicants and append active notice status from HiredWorker dynamically
@@ -102,6 +102,7 @@ exports.getMyJobs = async (req, res) => {
           applicant.professionalId.isEmployed = activeWorker.status === 'Active';
           applicant.professionalId.isServingNotice = ['ResignationPending', 'ResignationAccepted'].includes(activeWorker.status);
           if (applicant.professionalId.isServingNotice) {
+            applicant.professionalId.noticeStartDate = activeWorker.resignationSubmittedDate;
             applicant.professionalId.noticeEndDate = activeWorker.lastWorkingDate;
           }
         }
@@ -130,15 +131,59 @@ exports.updateJob = async (req, res) => {
 };
 
 exports.deleteJob = async (req, res) => {
-  const job = await JobPost.findOneAndDelete({ _id: req.params.id, contractorId: req.user.id });
-  if (!job) return res.status(404).json({ message: 'Job not found' });
-  res.json({ message: 'Job deleted' });
+  try {
+    const job = await JobPost.findOneAndDelete({ _id: req.params.id, contractorId: req.user.id });
+    if (!job) return res.status(404).json({ message: 'Job not found' });
+
+    // Find all applications for this job
+    const apps = await Application.find({ jobPostId: req.params.id });
+
+    // Update application status to 'Job Deleted' for all non-final statuses
+    await Application.updateMany(
+      { jobPostId: req.params.id, status: { $in: ['Applied', 'Viewed', 'Shortlisted', 'Hired'] } },
+      { status: 'Job Deleted' }
+    );
+
+    const contractor = await User.findById(req.user.id);
+    const contractorName = contractor.companyName || contractor.name;
+    const io = getIO();
+
+    for (const app of apps) {
+      if (['Applied', 'Viewed', 'Shortlisted', 'Hired'].includes(app.status)) {
+        // Create a notification for the professional
+        const notification = new Notification({
+          userId: app.professionalId,
+          type: 'Job',
+          title: 'Job Post Deleted',
+          message: `The job post for "${job.jobRole}" that you applied to has been deleted by ${contractorName}.`,
+          relatedId: job._id,
+          actionTab: NOTIFICATION_TABS.PROFESSIONAL_MY_APPLICATIONS
+        });
+        await notification.save();
+
+        if (io) {
+          // Emit socket notifications
+          io.to(`user:${app.professionalId}`).emit('notification', { notification });
+          io.to(`user:${app.professionalId}`).emit('applicationStatusUpdate', {
+            applicationId: app._id,
+            newStatus: 'Job Deleted',
+            jobPostId: job._id
+          });
+        }
+      }
+    }
+
+    res.json({ message: 'Job deleted' });
+  } catch (error) {
+    console.error('deleteJob error:', error);
+    res.status(500).json({ message: error.message });
+  }
 };
 
 exports.getApplicants = async (req, res) => {
   const HiredWorker = require('../models/HiredWorker');
   const job = await JobPost.findOne({ _id: req.params.id, contractorId: req.user.id })
-    .populate('applicants.professionalId', 'name phone email jobRole yearsOfExperience locationPreference qualification about isServingNotice noticeEndDate isTrustedProfessional averageRating totalReviews');
+    .populate('applicants.professionalId', 'name phone email jobRole yearsOfExperience locationPreference qualification about isServingNotice noticeStartDate noticeEndDate isTrustedProfessional averageRating totalReviews');
   if (!job) return res.status(404).json({ message: 'Job not found' });
 
   // Map over applicants and append active notice status
@@ -154,6 +199,7 @@ exports.getApplicants = async (req, res) => {
           appObj.professionalId.isEmployed = activeWorker.status === 'Active';
           appObj.professionalId.isServingNotice = ['ResignationPending', 'ResignationAccepted'].includes(activeWorker.status);
           if (appObj.professionalId.isServingNotice) {
+            appObj.professionalId.noticeStartDate = activeWorker.resignationSubmittedDate;
             appObj.professionalId.noticeEndDate = activeWorker.lastWorkingDate;
           }
         } else {
@@ -164,7 +210,29 @@ exports.getApplicants = async (req, res) => {
     return appObj;
   }));
 
-  res.json(applicantsWithStatus);
+  const { status, sortBy = 'recent' } = req.query;
+  let filtered = applicantsWithStatus;
+  if (status && status !== 'all' && status !== 'All') {
+    filtered = filtered.filter(a => a.status.toLowerCase() === status.toLowerCase());
+  }
+
+  switch (sortBy) {
+    case 'experience_desc':
+      filtered.sort((a, b) => (b.professionalId?.yearsOfExperience || 0) - (a.professionalId?.yearsOfExperience || 0));
+      break;
+    case 'experience_asc':
+      filtered.sort((a, b) => (a.professionalId?.yearsOfExperience || 0) - (b.professionalId?.yearsOfExperience || 0));
+      break;
+    case 'rating_desc':
+      filtered.sort((a, b) => (b.professionalId?.averageRating || 0) - (a.professionalId?.averageRating || 0));
+      break;
+    case 'recent':
+    default:
+      filtered.sort((a, b) => new Date(b.appliedAt || 0) - new Date(a.appliedAt || 0));
+      break;
+  }
+
+  res.json(filtered);
 };
 
 exports.updateApplicantStatus = async (req, res) => {
@@ -232,6 +300,13 @@ exports.hireProfessional = async (req, res) => {
 
     const job = await JobPost.findOne({ _id: id, contractorId: req.user.id });
     if (!job) return res.status(404).json({ message: 'Job not found' });
+
+    const professional = await User.findById(professionalId);
+    if (!professional) return res.status(404).json({ message: 'Professional not found' });
+
+    if (professional.isServingNotice) {
+      return res.status(400).json({ message: 'Cannot hire candidate. They are currently serving a notice period.' });
+    }
 
     const HiredWorker = require('../models/HiredWorker');
     const activeWorker = await HiredWorker.findOne({

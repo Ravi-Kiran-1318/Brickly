@@ -19,6 +19,13 @@ const availabilityPostSchema = new mongoose.Schema({
     email: String,
     hireDate: Date,
   },
+  isCrewPost: { type: Boolean, default: false },
+  crewMembers: [{
+    name: { type: String, required: true },
+    role: { type: String, required: true },
+    yearsOfExperience: { type: Number, required: true }
+  }],
+  crewSize: { type: Number, default: 1 },
   createdAt: { type: Date, default: Date.now }
 });
 

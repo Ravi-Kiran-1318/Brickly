@@ -9,9 +9,10 @@ import {
   IconCalendarTime, IconCurrencyRupee, IconCircleCheck, 
   IconX, IconClock, IconEye, IconUserCircle, IconMapRoute, 
   IconAlertCircle, IconHandStop, IconPlayerPlay, IconRefresh,
-  IconBriefcase, IconDoorExit
+  IconBriefcase, IconDoorExit, IconAlertTriangle
 } from '@tabler/icons-react';
 import LeaveContractorReviewModal from './LeaveContractorReviewModal';
+import FileDisputeModal from '../FileDisputeModal';
 
 const RouteMap = lazy(() => import('./RouteMap'));
 
@@ -34,7 +35,9 @@ const STATUS_COLORS = {
   'Rejected': 'bg-red-100 text-red-600 border-red-200',
   'Joined': 'bg-emerald-100 text-emerald-700 border-emerald-200',
   'Withdrawn': 'bg-slate-100 text-slate-500 border-slate-200',
-  'Position Filled': 'bg-amber-100 text-amber-600 border-amber-200'
+  'Position Filled': 'bg-amber-100 text-amber-600 border-amber-200',
+  'Job Deleted': 'bg-red-100 text-red-600 border-red-200',
+  'Position Cancelled': 'bg-red-100 text-red-600 border-red-200'
 };
 
 const LoadingSkeleton = () => (
@@ -67,6 +70,7 @@ const ApplicationsTab = ({ openMapJobId, setOpenMapJobId }) => {
   const [joinConfirm, setJoinConfirm] = useState(null);
   const [joinLoading, setJoinLoading] = useState(false);
   const [reviewModalData, setReviewModalData] = useState(null);
+  const [disputeHiredWorkerId, setDisputeHiredWorkerId] = useState(null);
 
   useEffect(() => {
     fetchApplications();
@@ -142,7 +146,9 @@ const ApplicationsTab = ({ openMapJobId, setOpenMapJobId }) => {
       await api.post('/api/professional/resign', { 
         reason: resignData.reason
       });
-      toast.success('Resignation submitted. You are now serving a 7-day notice period.');
+      const appObj = applications.find(a => a._id === applicationId);
+      const noticeDays = appObj?.jobPostId?.noticePeriodDays !== undefined ? appObj.jobPostId.noticePeriodDays : 7;
+      toast.success(`Resignation submitted. You are now serving a ${noticeDays}-day notice period.`);
       setApplications(prev => prev.map(app => app._id === applicationId ? { ...app, status: 'Resigned' } : app));
       // Force reload to get updated user state with isServingNotice
       window.location.reload();
@@ -217,6 +223,7 @@ const ApplicationsTab = ({ openMapJobId, setOpenMapJobId }) => {
               companyName: appData.contractorId?.companyName,
               hiredWorkerId: appData.hiredWorkerId
             })}
+            onFileDispute={(hiredWorkerId) => setDisputeHiredWorkerId(hiredWorkerId)}
           />
         )) : (
           <div className="py-20 text-center bg-white dark:bg-slate-900 rounded-[40px] border-2 border-dashed border-slate-200 dark:border-slate-800">
@@ -292,9 +299,13 @@ const ApplicationsTab = ({ openMapJobId, setOpenMapJobId }) => {
   );
 };
 
-const ApplicationCard = ({ application, user, openMapJobId, setOpenMapJobId, onJoinClick, onReject, onResign, onLeaveReview }) => {
+const ApplicationCard = ({ application, user, openMapJobId, setOpenMapJobId, onJoinClick, onReject, onResign, onLeaveReview, onFileDispute }) => {
   const job = application.jobPostId;
   const contractor = application.contractorId;
+
+  const displayStatus = (application.status === 'Hired' && (application.jobPostExists === false || job?._id === 'deleted')) 
+    ? 'Position Filled' 
+    : application.status;
 
   const [isRejecting, setIsRejecting] = useState(false);
   const [rejectionReason, setRejectionReason] = useState('');
@@ -319,34 +330,51 @@ const ApplicationCard = ({ application, user, openMapJobId, setOpenMapJobId, onJ
     <motion.div 
       initial={{ opacity: 0, x: -20 }}
       animate={{ opacity: 1, x: 0 }}
-      className={`bg-white dark:bg-slate-900 rounded-[35px] border ${application.status === 'Rejected' ? 'border-red-200 dark:border-red-900/50 opacity-75' : 'border-slate-200 dark:border-slate-800'} p-8 hover:shadow-lg hover:border-accent transition-all relative overflow-hidden`}
+      className={`bg-white dark:bg-slate-900 rounded-[35px] border ${displayStatus === 'Rejected' ? 'border-red-200 dark:border-red-900/50 opacity-75' : 'border-slate-200 dark:border-slate-800'} p-8 hover:shadow-lg hover:border-accent transition-all relative overflow-hidden`}
     >
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
         <div className="flex items-center gap-6">
           <div className={`w-16 h-16 rounded-3xl flex items-center justify-center shrink-0 ${
-            application.status === 'Joined' ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600' : 'bg-blue-50 dark:bg-blue-900/20 text-blue-600'
+            displayStatus === 'Joined' ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600' : 'bg-blue-50 dark:bg-blue-900/20 text-blue-600'
           }`}>
              <IconBuildingSkyscraper size={32} />
           </div>
           <div>
              <div className="flex flex-wrap items-center gap-2 mb-1">
                 <h3 className="text-xl font-black text-primary dark:text-white tracking-tight">{job.jobRole}</h3>
-                <span className={`text-[10px] font-black uppercase px-2.5 py-1 rounded-lg border ${STATUS_COLORS[application.status] || 'bg-slate-100'}`}>
-                  {application.status}
+                <span className={`text-[10px] font-black uppercase px-2.5 py-1 rounded-lg border ${STATUS_COLORS[displayStatus] || 'bg-slate-100'}`}>
+                  {displayStatus}
                 </span>
-                {(application.status === 'Hired' || application.status === 'Joined') && distanceText && (
+                {(displayStatus === 'Hired' || displayStatus === 'Joined') && distanceText && (
                   <span className="text-[10px] font-black text-green-700 bg-green-100 border border-green-200 px-2 py-1 rounded-md flex items-center gap-1">
                     <IconMapPin size={12} /> {distanceText} km away
                   </span>
                 )}
              </div>
-             <p className="text-sm font-bold text-slate-500 flex items-center gap-1.5 ring-1 ring-slate-100 dark:ring-white/5 w-fit px-3 py-0.5 rounded-full mt-1">
-                <IconUserCircle size={16} /> {contractor?.companyName || contractor?.name}
-             </p>
+             <div className="flex flex-wrap items-center gap-2 mt-2">
+                {contractor?.companyName && (
+                  <p className="text-xs font-bold text-slate-500 flex items-center gap-1.5 ring-1 ring-slate-100 dark:ring-white/5 w-fit px-3 py-1 rounded-full">
+                     <IconBuildingSkyscraper size={14} className="text-accent" /> {contractor.companyName}
+                  </p>
+                )}
+                <p className="text-xs font-bold text-slate-500 flex items-center gap-1.5 ring-1 ring-slate-100 dark:ring-white/5 w-fit px-3 py-1 rounded-full">
+                   <IconUserCircle size={14} className="text-blue-500" /> {contractor?.name || 'Unknown Contractor'}
+                </p>
+                {contractor?.email && (
+                  <p className="text-xs font-medium text-slate-400 flex items-center gap-1.5 ring-1 ring-slate-100 dark:ring-white/5 w-fit px-3 py-1 rounded-full">
+                     <span className="text-[9px] font-black uppercase text-slate-400">Email:</span> {contractor.email}
+                  </p>
+                )}
+                {contractor?.phone && (
+                  <p className="text-xs font-medium text-slate-400 flex items-center gap-1.5 ring-1 ring-slate-100 dark:ring-white/5 w-fit px-3 py-1 rounded-full">
+                     <span className="text-[9px] font-black uppercase text-slate-400">Phone:</span> {contractor.phone}
+                  </p>
+                )}
+             </div>
           </div>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-6 lg:gap-8">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-6 lg:gap-8">
            <div className="flex flex-col">
               <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1 flex items-center gap-1"><IconCurrencyRupee size={10} /> Salary</span>
               <span className="text-base font-black text-accent leading-none">₹{job.salary}</span>
@@ -356,9 +384,15 @@ const ApplicationCard = ({ application, user, openMapJobId, setOpenMapJobId, onJ
               <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1 flex items-center gap-1"><IconMapPin size={10} /> Location</span>
               <span className="text-sm font-bold text-primary dark:text-blue-100">{job.workLocation}</span>
            </div>
-           <div className="flex flex-col sm:col-span-1 col-span-2">
+           <div className="flex flex-col">
+              <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1 flex items-center gap-1"><IconCalendarTime size={10} /> Start Date</span>
+              <span className="text-sm font-bold text-primary dark:text-blue-100">
+                {job.startDate ? new Date(job.startDate).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : 'Immediate'}
+              </span>
+           </div>
+           <div className="flex flex-col">
               <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1 flex items-center gap-1"><IconCalendarTime size={10} /> Applied On</span>
-              <span className="text-sm font-bold text-primary dark:text-blue-100">{new Date(application.appliedAt).toLocaleDateString()}</span>
+              <span className="text-sm font-bold text-primary dark:text-blue-100">{new Date(application.appliedAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}</span>
            </div>
         </div>
       </div>
@@ -374,8 +408,7 @@ const ApplicationCard = ({ application, user, openMapJobId, setOpenMapJobId, onJ
                 <IconMapRoute size={16} /> {isMapOpen ? 'Hide Route' : 'View Route'}
               </button>
             )}
-            
-            {application.status === 'Hired' && (
+             {displayStatus === 'Hired' && (
               <>
                 <button 
                   onClick={onJoinClick}
@@ -407,7 +440,7 @@ const ApplicationCard = ({ application, user, openMapJobId, setOpenMapJobId, onJ
               </>
             )}
 
-            {application.status === 'Joined' && !user?.isServingNotice && (
+            {displayStatus === 'Joined' && !user?.isServingNotice && (
               <button 
                 onClick={() => setIsResignModalOpen(true)}
                 className="flex items-center gap-2 text-xs font-black px-6 py-2.5 rounded-xl bg-slate-100 text-slate-600 hover:bg-red-100 hover:text-red-600 transition-all"
@@ -416,7 +449,7 @@ const ApplicationCard = ({ application, user, openMapJobId, setOpenMapJobId, onJ
               </button>
             )}
 
-            {(application.status === 'Joined' || application.status === 'Resigned') && application.hiredWorkerId && !application.hasReviewed && (
+            {(displayStatus === 'Joined' || displayStatus === 'Resigned') && application.hiredWorkerId && !application.hasReviewed && (
               <button 
                 onClick={() => onLeaveReview(application)}
                 className="flex items-center gap-2 text-xs font-black px-6 py-2.5 rounded-xl bg-orange-500 text-white hover:bg-orange-600 shadow-lg shadow-orange-500/20 transition-all hover:-translate-y-0.5 active:scale-95"
@@ -424,26 +457,36 @@ const ApplicationCard = ({ application, user, openMapJobId, setOpenMapJobId, onJ
                 Leave Review
               </button>
             )}
+
+            {(displayStatus === 'Joined' || displayStatus === 'Resigned') && application.hiredWorkerId && (
+              <button 
+                onClick={() => onFileDispute(application.hiredWorkerId._id || application.hiredWorkerId)}
+                className="flex items-center gap-2 text-xs font-black px-6 py-2.5 rounded-xl bg-red-100 text-red-600 hover:bg-red-200 transition-all active:scale-95"
+              >
+                <IconAlertTriangle size={16} /> File a Dispute
+              </button>
+            )}
          </div>
          
          <div className="flex items-center gap-3 shrink-0">
             <div className="px-4 py-2 bg-slate-50 dark:bg-slate-800 rounded-xl flex items-center justify-center min-w-[100px] gap-2">
-                {application.status === 'Applied' && <IconClock size={16} className="text-slate-400" />}
-                {application.status === 'Viewed' && <IconEye size={16} className="text-purple-500" />}
-                {application.status === 'Shortlisted' && <IconCircleCheck size={16} className="text-orange-500 animate-bounce" />}
-                {application.status === 'Hired' && <IconCircleCheck size={16} className="text-green-500" />}
-                {application.status === 'Joined' && <IconCircleCheck size={16} className="text-emerald-600" />}
-                {application.status === 'Rejected' && <IconX size={16} className="text-red-500" />}
-                {application.status === 'Withdrawn' && <IconHandStop size={16} className="text-slate-400" />}
-                {application.status === 'Position Filled' && <IconAlertCircle size={16} className="text-amber-500" />}
-                <span className="text-[10px] font-black uppercase text-slate-400">{application.status}</span>
+                {displayStatus === 'Applied' && <IconClock size={16} className="text-slate-400" />}
+                {displayStatus === 'Viewed' && <IconEye size={16} className="text-purple-500" />}
+                {displayStatus === 'Shortlisted' && <IconCircleCheck size={16} className="text-orange-500 animate-bounce" />}
+                {displayStatus === 'Hired' && <IconCircleCheck size={16} className="text-green-500" />}
+                {displayStatus === 'Joined' && <IconCircleCheck size={16} className="text-emerald-600" />}
+                {displayStatus === 'Rejected' && <IconX size={16} className="text-red-500" />}
+                {displayStatus === 'Withdrawn' && <IconHandStop size={16} className="text-slate-400" />}
+                {displayStatus === 'Position Filled' && <IconAlertCircle size={16} className="text-amber-500" />}
+                {displayStatus === 'Job Deleted' && <IconX size={16} className="text-red-500" />}
+                {displayStatus === 'Position Cancelled' && <IconX size={16} className="text-red-500" />}
+                <span className="text-[10px] font-black uppercase text-slate-400">{displayStatus}</span>
             </div>
          </div>
       </div>
 
-      {/* Inline Reject Area */}
       <AnimatePresence>
-        {isRejecting && application.status === 'Hired' && (
+        {isRejecting && displayStatus === 'Hired' && (
           <motion.div 
             initial={{ height: 0, opacity: 0 }} 
             animate={{ height: 'auto', opacity: 1 }} 
@@ -498,7 +541,7 @@ const ApplicationCard = ({ application, user, openMapJobId, setOpenMapJobId, onJ
 
               <div className="bg-orange-100 border border-orange-200 p-4 rounded-2xl mb-6">
                 <p className="text-orange-800 font-bold text-sm">
-                  ⚠️ You will serve a mandatory 7-day notice period. During this time you cannot apply to or accept any new jobs.
+                  ⚠️ You will serve a mandatory {job.noticePeriodDays !== undefined ? job.noticePeriodDays : 7}-day notice period. During this time you cannot apply to or accept any new jobs.
                 </p>
               </div>
               
@@ -576,6 +619,12 @@ const ApplicationCard = ({ application, user, openMapJobId, setOpenMapJobId, onJ
           </motion.div>
         )}
       </AnimatePresence>
+      <FileDisputeModal
+        isOpen={!!disputeHiredWorkerId}
+        onClose={() => setDisputeHiredWorkerId(null)}
+        hiredWorkerId={disputeHiredWorkerId}
+        onSuccess={() => {}}
+      />
     </motion.div>
   );
 };

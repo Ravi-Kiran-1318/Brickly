@@ -8,6 +8,13 @@ const checkAndAwardTrustedBadge = async (professionalId) => {
     const ProfessionalReview = mongoose.model('ProfessionalReview');
     const User = mongoose.model('User');
     const Notification = mongoose.model('Notification');
+    const Dispute = mongoose.model('Dispute');
+
+    // Count open/under_review disputes where the professional is the recipient
+    const openDisputesCount = await Dispute.countDocuments({
+      recipientId: professionalId,
+      status: { $in: ['open', 'under_review'] }
+    });
 
     const completedJobs = await HiredWorker.countDocuments({
       professionalId,
@@ -21,7 +28,29 @@ const checkAndAwardTrustedBadge = async (professionalId) => {
     const professional = await User.findById(professionalId);
     if (!professional) return;
 
-    if (completedJobs >= 3 && avgRating >= 4.0 && !professional.isTrustedProfessional) {
+    // If professional has open disputes, revoke the badge if they have it
+    if (openDisputesCount > 0 && professional.isTrustedProfessional) {
+      professional.isTrustedProfessional = false;
+      await professional.save();
+
+      const notification = new Notification({
+        userId: professionalId,
+        title: 'Trusted Professional Badge Suspended',
+        message: 'Your Trusted Professional badge has been suspended due to an open dispute.',
+        type: 'General',
+        actionTab: 'my-availability'
+      });
+      await notification.save();
+
+      const io = getIO();
+      if (io) {
+        io.to(`user:${professionalId}`).emit('notification', { notification });
+        io.to(`user:${professionalId}`).emit('professional:badgeLost', { professionalId });
+      }
+      return;
+    }
+
+    if (completedJobs >= 3 && avgRating >= 4.0 && !professional.isTrustedProfessional && openDisputesCount === 0) {
       professional.isTrustedProfessional = true;
       professional.trustedSince = new Date();
       await professional.save();

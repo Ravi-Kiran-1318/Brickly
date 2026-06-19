@@ -8,10 +8,15 @@ const initCronJobs = () => {
   cron.schedule('0 8 * * *', async () => {
     console.log('[CRON] Starting Daily Job Alert Digest process...');
     try {
-      // Find professionals who have pending job alert emails
+      // Find professionals who have pending job alert emails AND have daily digest preference (or default/undefined)
       const professionals = await User.find({
         role: 'professional',
-        'pendingJobAlertEmails.0': { $exists: true }
+        'pendingJobAlertEmails.0': { $exists: true },
+        $or: [
+          { 'notificationPreferences.jobDigestFrequency': 'daily' },
+          { 'notificationPreferences.jobDigestFrequency': { $exists: false } },
+          { 'notificationPreferences': { $exists: false } }
+        ]
       });
 
       for (const prof of professionals) {
@@ -88,7 +93,7 @@ const initCronJobs = () => {
       const User = require('./models/User');
 
       const expiredResignations = await HiredWorker.find({
-        status: 'ResignationAccepted',
+        status: { $in: ['ResignationPending', 'ResignationAccepted'] },
         lastWorkingDate: { $lte: new Date() }
       });
 
@@ -107,8 +112,8 @@ const initCronJobs = () => {
           // Notify professional without contractor details
           const notification = new Notification({
             userId: hiredWorker.professionalId,
-            title: 'Resignation Complete',
-            message: 'Your resignation is complete. You are now available for new opportunities.',
+            title: 'Notice Period Complete',
+            message: 'Your notice period has ended. You are now free to apply and join new positions. Post your availability to attract new contractors.',
             type: 'General',
             actionTab: NOTIFICATION_TABS.PROFESSIONAL_MY_AVAILABILITY || 'my-availability'
           });
@@ -156,10 +161,10 @@ const initCronJobs = () => {
 
         const notif = new Notification({
           userId: prof._id,
-          title: 'Notice Period Ended',
-          message: 'Your 7-day notice period has ended. You are now free to apply to new opportunities.',
+          title: 'Notice Period Complete',
+          message: 'Your notice period has ended. You are now free to apply and join new positions. Post your availability to attract new contractors.',
           type: 'General',
-          actionTab: NOTIFICATION_TABS.PROFESSIONAL_MY_AVAILABILITY
+          actionTab: NOTIFICATION_TABS.PROFESSIONAL_MY_AVAILABILITY || 'my-availability'
         });
         await notif.save();
 
@@ -172,11 +177,11 @@ const initCronJobs = () => {
           await sendMail({
             to: prof.email,
             subject: 'Your notice period has ended — Welcome back to BuildR',
-            html: '<p>Your 7-day notice period has ended. You are now free to apply to new opportunities.</p>'
+            html: '<p>Your 7-day notice period has ended. You are now free to apply and join new positions. Post your availability to attract new contractors.</p>'
           });
         }
 
-        // Notify waiting contractors
+        // Notify waiting contractors and shortlisted contractors
         const Application = require('./models/Application');
         const JobPost = require('./models/JobPost');
         
@@ -206,11 +211,134 @@ const initCronJobs = () => {
             }
           }
         }
+
+        const shortlistedApplications = await Application.find({ 
+          professionalId: prof._id, 
+          status: 'Shortlisted' 
+        });
+
+        for (const app of shortlistedApplications) {
+          const job = await JobPost.findById(app.jobPostId);
+          if (job && job.status === 'Active' && !job.isFilled) {
+            const contractorNotif = new Notification({
+              userId: app.contractorId,
+              title: 'Shortlisted Candidate Now Available',
+              message: `${prof.name} who you shortlisted for the ${job.jobRole} role is now available as their notice period has ended. Consider hiring them now.`,
+              type: 'Job',
+              actionTab: NOTIFICATION_TABS.CONTRACTOR_JOB_POSTS || 'job-posts',
+              relatedId: job._id
+            });
+            await contractorNotif.save();
+
+            if (io) {
+              io.to(`user:${app.contractorId}`).emit('notification', {
+                notification: contractorNotif
+              });
+              io.to(`user:${app.contractorId}`).emit('shortlistedCandidateAvailable', {
+                professionalId: prof._id,
+                jobPostId: job._id,
+                notification: contractorNotif
+              });
+            }
+
+            try {
+              await sendMail({
+                to: app.contractorSnapshot?.email || (await User.findById(app.contractorId))?.email,
+                subject: 'Shortlisted Candidate Now Available to Join immediately',
+                html: `
+                  <h2>Shortlisted Candidate Available</h2>
+                  <p><strong>${prof.name}</strong>, who you shortlisted for the <strong>${job.jobRole}</strong> role, has completed their notice period and is now available to join immediately.</p>
+                  <p>Please log in to BuildR and go to your Job Posts tab to hire them.</p>
+                `
+              });
+            } catch (emailErr) {
+              console.error('Email send error to shortlisted contractor:', emailErr);
+            }
+          }
+        }
       }
 
       console.log(`[CRON] Processed ${expiredResignations.length} completed notice periods.`);
     } catch (error) {
       console.error('[CRON Resignation Error]', error);
+    }
+  });
+
+  // Run every Monday at 8:00 AM (0 8 * * 1) to check weekly digests
+  cron.schedule('0 8 * * 1', async () => {
+    console.log('[CRON] Starting Weekly Job Alert Digest process...');
+    try {
+      const User = require('./models/User');
+      const { sendMail } = require('./utils/mailer');
+      
+      const professionals = await User.find({
+        role: 'professional',
+        'pendingJobAlertEmails.0': { $exists: true },
+        'notificationPreferences.jobDigestFrequency': 'weekly'
+      });
+
+      for (const prof of professionals) {
+        if (!prof.pendingJobAlertEmails || prof.pendingJobAlertEmails.length === 0) continue;
+
+        const jobSummaries = prof.pendingJobAlertEmails;
+
+        // Build a styled HTML digest
+        const jobsHtmlList = jobSummaries.map(job => `
+          <div style="border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin-bottom: 16px;">
+            <h3 style="margin-top: 0; margin-bottom: 8px; color: #1e293b;">${job.jobRole}</h3>
+            <p style="margin: 4px 0; color: #64748b;"><strong>Company:</strong> ${job.contractorName}</p>
+            <p style="margin: 4px 0; color: #64748b;"><strong>Salary:</strong> ${job.salary}</p>
+            <p style="margin: 4px 0; color: #64748b;"><strong>Location:</strong> ${job.workLocation}</p>
+            <p style="margin: 12px 0 0 0;">
+              <a href="${process.env.CLIENT_URL || 'http://localhost:5173'}/dashboard" 
+                 style="background-color: #f97316; color: white; text-decoration: none; padding: 8px 16px; border-radius: 6px; font-weight: bold; display: inline-block;">
+                 View Job
+              </a>
+            </p>
+          </div>
+        `).join('');
+
+        const emailHtml = `
+          <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+            <div style="background-color: #0f172a; padding: 20px; border-radius: 12px 12px 0 0; text-align: center;">
+              <h1 style="color: white; margin: 0; font-size: 24px;">BuildR</h1>
+            </div>
+            <div style="background-color: white; border: 1px solid #e2e8f0; border-top: none; padding: 32px; border-radius: 0 0 12px 12px;">
+              <h2 style="margin-top: 0; color: #0f172a;">Weekly Job Opportunities Summary</h2>
+              <p style="color: #64748b; line-height: 1.6;">Hello ${prof.name}, here are the matching jobs posted during this past week:</p>
+              
+              <div style="margin-top: 24px;">
+                ${jobsHtmlList}
+              </div>
+
+              <div style="margin-top: 32px; text-align: center; border-top: 1px solid #e2e8f0; pt-4">
+                <p style="color: #94a3b8; font-size: 12px;">You are receiving this because you have Job Alerts enabled on BuildR. You can change your preferences in your profile settings.</p>
+              </div>
+            </div>
+          </div>
+        `;
+
+        try {
+          await sendMail({
+            to: prof.email,
+            subject: 'Weekly Job Opportunities on BuildR',
+            html: emailHtml
+          });
+        } catch (mailErr) {
+          console.error('[CRON Weekly Mail Error]', mailErr);
+        }
+
+        // Clear the array after sending
+        await User.findByIdAndUpdate(prof._id, {
+          $set: { pendingJobAlertEmails: [] }
+        });
+        
+        console.log(`[CRON] Sent weekly digest with ${jobSummaries.length} jobs to ${prof.email}`);
+      }
+      
+      console.log('[CRON] Weekly Job Alert Digest process completed.');
+    } catch (error) {
+      console.error('[CRON Weekly Error]', error);
     }
   });
 };

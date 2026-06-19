@@ -15,6 +15,14 @@ const hiredWorkerSchema = new mongoose.Schema({
   additionalComments: { type: String },
   resignationSubmittedDate: { type: Date },
   lastWorkingDate: { type: Date },
+  noticePeriodDays: { type: Number, default: 7, min: 0, max: 30 },
+  isCrewHire: { type: Boolean, default: false },
+  crewDetails: [{
+    name: { type: String },
+    role: { type: String },
+    yearsOfExperience: { type: Number }
+  }],
+  crewSize: { type: Number, default: 1 },
   joinedAt: { type: Date, default: Date.now }
 });
 

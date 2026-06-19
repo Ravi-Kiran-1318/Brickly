@@ -15,6 +15,7 @@ const contractRoutes = require('./routes/contract');
 const reviewRoutes = require('./routes/reviewRoutes');
 const dealerRoutes = require('./routes/dealer');
 const professionalRoutes = require('./routes/professional');
+const disputeRoutes = require('./routes/disputes');
 
 const app = express();
 const httpServer = http.createServer(app);
@@ -79,6 +80,7 @@ app.use('/api/contracts', contractRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/dealer', dealerRoutes);
 app.use('/api/professional', professionalRoutes);
+app.use('/api/disputes', disputeRoutes);
 
 // ── Database Connection ──────────────────────
 mongoose.connect(process.env.MONGODB_URI, {

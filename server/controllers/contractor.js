@@ -64,7 +64,11 @@ exports.getTeam = async (req, res) => {
       user.hiredWorkerId = w._id;
       user.isServingNotice = ['ResignationPending', 'ResignationAccepted'].includes(w.status);
       user.resignationReason = w.resignationReason;
+      user.noticeStartDate = w.resignationSubmittedDate;
       user.noticeEndDate = w.lastWorkingDate;
+      user.isCrewHire = w.isCrewHire;
+      user.crewDetails = w.crewDetails;
+      user.crewSize = w.crewSize;
       return user;
     });
 

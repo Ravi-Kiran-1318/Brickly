@@ -208,7 +208,8 @@ exports.submitReply = async (req, res) => {
       title: 'Contractor Replied to Your Review',
       message: `${contractor.companyName || contractor.name} has replied to your review.`,
       type: 'General',
-      actionTab: NOTIFICATION_TABS.PROFESSIONAL_REVIEWS || 'reviews'
+      actionTab: NOTIFICATION_TABS.PROFESSIONAL_REVIEWS || 'reviews',
+      relatedId: review._id
     });
     await notification.save();
 

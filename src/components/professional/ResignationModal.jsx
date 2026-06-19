@@ -4,7 +4,7 @@ import api from '../../api';
 import toast from 'react-hot-toast';
 import { IconMapPin } from '@tabler/icons-react';
 
-const ResignationModal = ({ isOpen, onClose, contractorName, jobRole, onSuccess }) => {
+const ResignationModal = ({ isOpen, onClose, contractorName, jobRole, noticePeriodDays, onSuccess }) => {
   const [reason, setReason] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -12,7 +12,7 @@ const ResignationModal = ({ isOpen, onClose, contractorName, jobRole, onSuccess 
     setLoading(true);
     try {
       await api.post('/api/professional/resign', { reason });
-      toast.success('Resignation submitted. You are now serving a 7-day notice period.');
+      toast.success(`Resignation submitted. You are now serving a ${noticePeriodDays || 7}-day notice period.`);
       if (onSuccess) onSuccess();
       onClose();
     } catch (err) {
@@ -38,7 +38,7 @@ const ResignationModal = ({ isOpen, onClose, contractorName, jobRole, onSuccess 
             <div className="bg-orange-100 border border-orange-200 p-4 rounded-2xl mb-6 flex gap-2">
               <span className="shrink-0">⚠️</span>
               <p className="text-orange-800 font-bold text-sm">
-                You will serve a mandatory 7-day notice period. During this time you cannot apply to or accept any new jobs.
+                You will serve a mandatory {noticePeriodDays || 7}-day notice period. During this time you cannot apply to or accept any new jobs.
               </p>
             </div>
             

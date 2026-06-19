@@ -52,6 +52,10 @@ const NotificationsTab = ({ setUnreadCount, setActiveTab }) => {
         fetchNotifications();
       }
       if (notification.actionTab && setActiveTab) {
+        if (notification.title === 'Professional Replied to Your Review') {
+          localStorage.setItem('reviewsSubTab', 'left');
+          localStorage.setItem('highlightReviewId', notification.relatedId);
+        }
         setActiveTab(notification.actionTab);
       }
     } catch (err) {

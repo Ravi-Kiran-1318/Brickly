@@ -7,6 +7,7 @@ import { IconSettings, IconBellRinging, IconCircleCheck, IconMapPin, IconAlertTr
 const SettingsTab = () => {
   const { user, updateUser } = useAuth();
   const [jobAlerts, setJobAlerts] = useState(user?.jobAlerts !== false);
+  const [digestFrequency, setDigestFrequency] = useState(user?.notificationPreferences?.jobDigestFrequency || 'daily');
   const [loading, setLoading] = useState(false);
   const [lat, setLat] = useState('');
   const [lng, setLng] = useState('');
@@ -16,11 +17,37 @@ const SettingsTab = () => {
     if (user && user.jobAlerts !== undefined) {
       setJobAlerts(user.jobAlerts);
     }
+    if (user && user.notificationPreferences && user.notificationPreferences.jobDigestFrequency) {
+      setDigestFrequency(user.notificationPreferences.jobDigestFrequency);
+    }
     if (user && user.location && user.location.coordinates) {
       setLng(user.location.coordinates[0]);
       setLat(user.location.coordinates[1]);
     }
   }, [user]);
+
+  const handleFrequencyChange = async (e) => {
+    const val = e.target.value;
+    setDigestFrequency(val);
+    try {
+      await api.put('/api/professional/profile', {
+        notificationPreferences: { jobDigestFrequency: val }
+      });
+      if (updateUser) {
+        updateUser({
+          ...user,
+          notificationPreferences: {
+            ...user.notificationPreferences,
+            jobDigestFrequency: val
+          }
+        });
+      }
+      toast.success('Job digest frequency updated!');
+    } catch (err) {
+      console.error(err);
+      toast.error('Failed to update digest frequency');
+    }
+  };
 
   const handleToggle = async () => {
     setLoading(true);
@@ -94,8 +121,22 @@ const SettingsTab = () => {
               <div>
                 <h3 className="font-black text-primary dark:text-white text-lg">Receive Job Alerts</h3>
                 <p className="text-sm font-medium text-slate-500 max-w-md">
-                  Get in-app notifications and a daily email digest when a contractor posts a job matching your trade.
+                  Get in-app notifications and an email digest when a contractor posts a job matching your trade.
                 </p>
+                {jobAlerts && (
+                  <div className="mt-4 flex items-center gap-3">
+                    <label className="text-xs font-black uppercase text-slate-400">Digest Frequency:</label>
+                    <select
+                      className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-1.5 text-xs font-bold text-primary dark:text-white focus:ring-2 focus:ring-accent outline-none"
+                      value={digestFrequency}
+                      onChange={handleFrequencyChange}
+                    >
+                      <option value="daily">Daily Digest</option>
+                      <option value="weekly">Weekly Digest (Mondays)</option>
+                      <option value="off">Off (In-App notifications only)</option>
+                    </select>
+                  </div>
+                )}
               </div>
             </div>
             

@@ -9,6 +9,7 @@ const jobPostSchema = new mongoose.Schema({
   salaryType: { type: String, enum: ['monthly', 'contract'], required: true },
   duration: { type: String, required: true },
   facilities: { type: String },
+  startDate: { type: Date, default: null },
   applicants: [{
     professionalId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     status: { 
@@ -25,6 +26,7 @@ const jobPostSchema = new mongoose.Schema({
     type: { type: String, default: 'Point' },
     coordinates: { type: [Number], index: '2dsphere' } // [longitude, latitude]
   },
+  noticePeriodDays: { type: Number, default: 7, min: 0, max: 30 },
   createdAt: { type: Date, default: Date.now }
 });
 

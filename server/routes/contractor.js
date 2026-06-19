@@ -33,11 +33,105 @@ router.post('/jobs/:id/hire/:professionalId', jobController.hireProfessional);
 
 // Availability Post & Direct Hire Routes
 router.get('/professionals', professionalController.getAllAvailability);
+router.get('/professionals/:id/availability', professionalController.getProfessionalAvailability);
 router.post('/direct-hire/:professionalId', professionalController.directHireRequest);
 router.get('/direct-hire-requests/sent', contractorController.getSentDirectHireRequests);
 
 // Resignation Routes
-router.post('/team/request-to-stay/:professionalId', contractorController.requestToStay);
+// router.post('/team/request-to-stay/:professionalId', contractorController.requestToStay);
+
+const HiredWorker = require('../models/HiredWorker');
+const RetentionOffer = require('../models/RetentionOffer');
+const Notification = require('../models/Notification');
+const User = require('../models/User');
+const { sendMail } = require('../utils/mailer');
+const { getIO } = require('../socket');
+const NOTIFICATION_TABS = require('../../shared/notificationConstants.json');
+
+router.post('/hired-worker/:id/retention-offer', async (req, res) => {
+  try {
+    const { offerType, newSalary, newRole, newSite, message } = req.body;
+
+    const record = await HiredWorker.findOne({
+      _id: req.params.id,
+      contractorId: req.user.id,
+      status: { $in: ['ResignationPending', 'ResignationAccepted'] },
+    });
+
+    if (!record) {
+      return res.status(404).json({
+        success: false,
+        message: 'No active notice period found for this employment.'
+      });
+    }
+
+    const existingOffer = await RetentionOffer.findOne({
+      hiredWorkerId: record._id, 
+      status: 'pending',
+    });
+    if (existingOffer) {
+      return res.status(409).json({
+        success: false,
+        message: 'You already have a pending retention offer for this employee.'
+      });
+    }
+
+    const offer = await RetentionOffer.create({
+      hiredWorkerId: record._id,
+      contractorId:   req.user.id,
+      professionalId: record.professionalId,
+      offerType, 
+      newSalary: newSalary ? parseFloat(newSalary) : undefined, 
+      newRole, 
+      newSite, 
+      message,
+    });
+
+    const profUser = await User.findById(record.professionalId);
+
+    const io = req.app.get('io') || getIO();
+    if (io) {
+      io.to(`user:${record.professionalId}`).emit('retention-offer:new', {
+        offerId: offer._id, 
+        contractorName: req.user.companyName || req.user.name, 
+        offerType,
+      });
+    }
+
+    const newNotif = new Notification({
+      userId: record.professionalId,
+      type: 'Hire',
+      title: 'Retention Offer Received',
+      message: `${req.user.companyName || req.user.name} sent you a retention offer to reconsider your resignation.`,
+      actionTab: NOTIFICATION_TABS.PROFESSIONAL_MY_AVAILABILITY || 'my-availability'
+    });
+    await newNotif.save();
+
+    if (io) {
+      io.to(`user:${record.professionalId}`).emit('notification', { notification: newNotif });
+    }
+
+    if (profUser && profUser.email) {
+      await sendMail({
+        to: profUser.email,
+        subject: 'Retention Offer Received',
+        html: `
+          <div style="font-family: Arial, sans-serif;">
+            <h2 style="color: #1E3A5F; border-bottom: 2px solid #F97316; padding-bottom: 10px;">Retention Offer Received</h2>
+            <p><strong>${req.user.companyName || req.user.name}</strong> has sent you a retention offer to stay on the team!</p>
+            <p><strong>Offer Type:</strong> ${offerType.replace('_', ' ')}</p>
+            ${message ? `<p style="font-style: italic;">"${message}"</p>` : ''}
+            <p>Log in to your BuildR dashboard to respond to this offer.</p>
+          </div>
+        `
+      }).catch(err => console.error('Failed to send retention offer email:', err));
+    }
+
+    res.status(201).json({ success: true, data: offer });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
 
 // Portfolio Routes
 router.post('/portfolio', (req, res, next) => { req.uploadFolder = 'portfolio'; next(); }, upload.array('images', 5), portfolioController.createPortfolio);
@@ -58,6 +152,7 @@ router.get('/deals', procurementController.getActiveDeals);
 router.get('/reviews', contractorController.getMyReviews);
 router.post('/professionals/:id/review', require('../controllers/professionalReviewController').createReview);
 router.get('/professionals/:id/reviews', require('../controllers/professionalReviewController').getReviewsForProfessional);
+router.get('/reviews/left', require('../controllers/professionalReviewController').getReviewsLeft);
 
 // Professional to Contractor Reviews (left by professionals)
 router.get('/my-reviews', contractorReviewController.getMyReviews);
@@ -73,6 +168,44 @@ router.delete('/notifications/:id', contractorController.deleteNotification);
 
 // Interest Request Routes
 router.get('/interests', contractorController.getInterests);
-router.put('/interests/:id/viewed', contractorController.viewInterest);
+// Attendance Log Route
+const Attendance = require('../models/Attendance');
+
+router.get('/hired-worker/:id/attendance-log', async (req, res) => {
+  try {
+    const record = await HiredWorker.findOne({
+      _id: req.params.id,
+      contractorId: req.user.id
+    });
+
+    if (!record) {
+      return res.status(404).json({ success: false, message: 'Hired worker record not found.' });
+    }
+
+    const monthQuery = req.query.month || new Date().toISOString().slice(0, 7); // 'YYYY-MM'
+    const [yearStr, monthStr] = monthQuery.split('-');
+    const year = parseInt(yearStr, 10);
+    const month = parseInt(monthStr, 10);
+    const daysInMonth = new Date(year, month, 0).getDate();
+
+    const records = await Attendance.find({
+      hiredWorkerId: record._id,
+      contractorId: req.user.id,
+      date: { $regex: '^' + monthQuery }
+    }).sort({ date: 1 });
+
+    const presentCount = records.filter(r => r.status === 'present').length;
+
+    res.json({
+      success: true,
+      records,
+      presentCount,
+      totalDays: daysInMonth,
+      month: monthQuery
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
 
 module.exports = router;

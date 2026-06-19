@@ -134,6 +134,26 @@ exports.replyToReview = async (req, res) => {
     ).populate('contractorId', 'name companyName');
 
     if (!review) return res.status(404).json({ message: 'Review not found' });
+
+    const professional = await User.findById(req.user.id);
+    const contractorId = review.contractorId._id || review.contractorId;
+
+    // Create notification for contractor
+    const notification = new Notification({
+      userId: contractorId,
+      title: 'Professional Replied to Your Review',
+      message: `${professional.name} has replied to your review.`,
+      type: 'General',
+      actionTab: NOTIFICATION_TABS.CONTRACTOR_REVIEWS || 'reviews',
+      relatedId: review._id
+    });
+    await notification.save();
+
+    const io = getIO();
+    if (io) {
+      io.to(`user:${contractorId}`).emit('notification', { notification });
+    }
+
     res.json(review);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -152,6 +172,18 @@ exports.reportReview = async (req, res) => {
 
     if (!review) return res.status(404).json({ message: 'Review not found' });
     res.json({ message: 'Review reported successfully' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// Contractor gets reviews they have written
+exports.getReviewsLeft = async (req, res) => {
+  try {
+    const reviews = await ProfessionalReview.find({ contractorId: req.user.id })
+      .populate('professionalId', 'name jobRole')
+      .sort({ createdAt: -1 });
+    res.json(reviews);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

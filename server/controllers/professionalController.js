@@ -87,6 +87,7 @@ exports.getWorkingStatus = async (req, res) => {
       return res.json({
         isWorking: true,
         isInNoticePeriod: false,
+        hiredWorkerId: hiredWorker._id,
         currentJob: {
           jobRole: hiredWorker.jobRole,
           joinDate: hiredWorker.joinedAt || hiredWorker.joinDate
@@ -94,20 +95,50 @@ exports.getWorkingStatus = async (req, res) => {
         lastWorkingDate: null,
         contractorName: contractor ? (contractor.companyName || contractor.name) : null,
         contractorId: contractor ? contractor._id : hiredWorker.contractorId,
-        status: hiredWorker.status
+        status: hiredWorker.status,
+        noticePeriodDays: hiredWorker.noticePeriodDays !== undefined ? hiredWorker.noticePeriodDays : 7
       });
     } else {
+      const lastWorkingDate = hiredWorker.lastWorkingDate;
+      let daysRemaining = 0;
+      let hoursRemaining = 0;
+      if (lastWorkingDate) {
+        const diffMs = new Date(lastWorkingDate).getTime() - new Date().getTime();
+        daysRemaining = Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
+        hoursRemaining = Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60)));
+      }
+
+      const RetentionOffer = require('../models/RetentionOffer');
+      const pendingOffer = await RetentionOffer.findOne({
+        hiredWorkerId: hiredWorker._id,
+        status: 'pending'
+      }).populate('contractorId', 'name companyName');
+
       return res.json({
         isWorking: true,
         isInNoticePeriod: true,
+        hiredWorkerId: hiredWorker._id,
+        daysRemaining,
+        hoursRemaining,
+        resignationStatus: hiredWorker.status,
         currentJob: {
           jobRole: hiredWorker.jobRole,
           joinDate: hiredWorker.joinedAt || hiredWorker.joinDate
         },
-        lastWorkingDate: hiredWorker.lastWorkingDate,
+        lastWorkingDate: lastWorkingDate ? new Date(lastWorkingDate).toISOString() : null,
         contractorName: contractor ? (contractor.companyName || contractor.name) : null,
         contractorId: contractor ? contractor._id : hiredWorker.contractorId,
-        status: hiredWorker.status
+        status: hiredWorker.status,
+        noticePeriodDays: hiredWorker.noticePeriodDays !== undefined ? hiredWorker.noticePeriodDays : 7,
+        pendingOffer: pendingOffer ? {
+          _id: pendingOffer._id,
+          contractorName: pendingOffer.contractorId?.companyName || pendingOffer.contractorId?.name || 'Contractor',
+          offerType: pendingOffer.offerType,
+          newSalary: pendingOffer.newSalary,
+          newRole: pendingOffer.newRole,
+          newSite: pendingOffer.newSite,
+          message: pendingOffer.message
+        } : null
       });
     }
   } catch (error) {
@@ -219,6 +250,7 @@ exports.applyToJob = async (req, res) => {
         salaryType: jobPost.salaryType,
         duration: jobPost.duration,
         facilities: jobPost.facilities,
+        startDate: jobPost.startDate,
       },
       contractorSnapshot: {
         contractorId: jobPostPopulated.contractorId._id,
@@ -280,6 +312,10 @@ exports.applyToJob = async (req, res) => {
 // --- Availability ---
 exports.getAvailability = async (req, res) => {
   try {
+    const user = await User.findById(req.user.id);
+    if (!user || !user.isVisible) {
+      return res.json(null);
+    }
     const post = await AvailabilityPost.findOne({ professionalId: req.user.id });
     res.json(post);
   } catch (error) {
@@ -300,6 +336,22 @@ exports.createAvailability = async (req, res) => {
     const validRoles = ROLE_HIERARCHY[userTrade];
     if (validRoles && !validRoles.includes(data.jobRole)) {
       return res.status(400).json({ message: 'Invalid job role for your registered trade' });
+    }
+
+    if (data.crewMembers && typeof data.crewMembers === 'string') {
+      try {
+        data.crewMembers = JSON.parse(data.crewMembers);
+      } catch (e) {
+        data.crewMembers = [];
+      }
+    }
+    if (data.isCrewPost === 'true' || data.isCrewPost === true) {
+      data.isCrewPost = true;
+      data.crewSize = 1 + (data.crewMembers ? data.crewMembers.length : 0);
+    } else {
+      data.isCrewPost = false;
+      data.crewMembers = [];
+      data.crewSize = 1;
     }
 
     if (req.files) {
@@ -365,6 +417,22 @@ exports.updateAvailability = async (req, res) => {
       return res.status(400).json({ message: 'Invalid job role for your registered trade' });
     }
 
+    if (data.crewMembers && typeof data.crewMembers === 'string') {
+      try {
+        data.crewMembers = JSON.parse(data.crewMembers);
+      } catch (e) {
+        data.crewMembers = [];
+      }
+    }
+    if (data.isCrewPost === 'true' || data.isCrewPost === true) {
+      data.isCrewPost = true;
+      data.crewSize = 1 + (data.crewMembers ? data.crewMembers.length : 0);
+    } else {
+      data.isCrewPost = false;
+      data.crewMembers = [];
+      data.crewSize = 1;
+    }
+
     if (req.files) {
       if (req.files.resume) data.resumeUrl = req.files.resume[0].path;
       if (req.files.certificates) data.certificateUrls = req.files.certificates.map(f => f.path);
@@ -383,6 +451,10 @@ exports.updateAvailability = async (req, res) => {
 
 exports.getMyAvailabilityPosts = async (req, res) => {
   try {
+    const user = await User.findById(req.user.id);
+    if (!user || !user.isVisible) {
+      return res.json({ success: true, data: [] });
+    }
     const posts = await AvailabilityPost.find({
       professionalId: req.user.id
     }).sort({ createdAt: -1 });
@@ -422,12 +494,13 @@ exports.getMyApplications = async (req, res) => {
     const applications = await Application.find({ professionalId: req.user.id })
       .populate({
         path: 'jobPostId',
-        select: 'jobRole workLocation salary salaryType duration facilities workSiteLocation isFilled',
+        select: 'jobRole workLocation salary salaryType duration facilities workSiteLocation isFilled startDate noticePeriodDays',
         populate: {
           path: 'contractorId',
           select: 'name companyName email phone'
         }
       })
+      .populate('contractorId', 'name companyName email phone')
       .sort({ appliedAt: -1 });
 
     const formatted = await Promise.all(applications.map(async (app) => {
@@ -455,15 +528,16 @@ exports.getMyApplications = async (req, res) => {
         salaryType: app.jobSnapshot?.salaryType,
         duration: app.jobSnapshot?.duration,
         facilities: app.jobSnapshot?.facilities,
+        startDate: app.jobSnapshot?.startDate || null,
         isFilled: true
       };
 
-      const mockContractor = app.contractorId || {
-        _id: app.contractorSnapshot?.contractorId,
+      const mockContractor = (app.contractorId && app.contractorId.name) ? app.contractorId : {
+        _id: app.contractorSnapshot?.contractorId || app.contractorId,
         name: app.contractorSnapshot?.name || 'Unknown',
         companyName: app.contractorSnapshot?.companyName || 'Unknown',
-        email: app.contractorSnapshot?.email,
-        phone: app.contractorSnapshot?.phone
+        email: app.contractorSnapshot?.email || 'N/A',
+        phone: app.contractorSnapshot?.phone || 'N/A'
       };
 
       return {
@@ -532,40 +606,92 @@ exports.deleteAllNotifications = async (req, res) => {
 exports.getAllAvailability = async (req, res) => {
   try {
     const { jobRole, minExp, location } = req.query;
-    const query = {};
     
-    // Only show people who are "Available"
-    const availableUsers = await User.find({ isAvailable: true, role: 'professional' }).select('_id');
-    const availableIds = availableUsers.map(u => u._id);
-    query.professionalId = { $in: availableIds };
+    const DirectHireRequest = require('../models/DirectHireRequest');
+    const pendingRequests = await DirectHireRequest.find({
+      contractorId: req.user.id,
+      status: 'Pending'
+    });
+    const pendingRequestUserIds = pendingRequests.map(r => r.professionalId);
 
-    if (jobRole) query.jobRole = { $regex: jobRole, $options: 'i' };
-    if (minExp) query.yearsOfExperience = { $gte: Number(minExp) };
-    if (location) query.locationPreference = { $regex: location, $options: 'i' };
+    // Find all professional users who are visible and online, OR who have a pending direct hire request from this contractor
+    const userQuery = {
+      role: 'professional',
+      $or: [
+        { isVisible: true, availabilityStatus: 'Online' },
+        { _id: { $in: pendingRequestUserIds } }
+      ]
+    };
 
-    const posts = await AvailabilityPost.find(query)
-      .populate('professionalId', 'name email phone avatar about jobRole yearsOfExperience')
-      .sort({ createdAt: -1 });
+    if (jobRole) userQuery.jobRole = { $regex: jobRole, $options: 'i' };
+    if (minExp) userQuery.yearsOfExperience = { $gte: Number(minExp) };
+    if (location) userQuery.locationPreference = { $regex: location, $options: 'i' };
+
+    const professionals = await User.find(userQuery)
+      .select('name email phone avatar about jobRole yearsOfExperience locationPreference isTrustedProfessional averageRating totalReviews isServingNotice noticeStartDate noticeEndDate currentContractorId isAvailable')
+      .sort({ updatedAt: -1 });
 
     const HiredWorker = require('../models/HiredWorker');
-    const postsWithStatus = await Promise.all(posts.map(async (post) => {
-      const pObj = post.toObject();
-      if (pObj.professionalId) {
-        const activeWorker = await HiredWorker.findOne({
-          professionalId: pObj.professionalId._id,
-          status: { $in: ['Active', 'ResignationPending', 'ResignationAccepted'] }
-        });
-        
-        if (activeWorker) {
-          pObj.professionalId.isServingNotice = ['ResignationPending', 'ResignationAccepted'].includes(activeWorker.status);
-          if (pObj.professionalId.isServingNotice) {
-            pObj.professionalId.noticeEndDate = activeWorker.lastWorkingDate;
-          }
-        } else {
-          pObj.professionalId.isServingNotice = false;
+    const postsWithStatus = await Promise.all(professionals.map(async (prof) => {
+      // Find their actual availability post if it exists
+      const post = await AvailabilityPost.findOne({ professionalId: prof._id });
+
+      const activeWorker = await HiredWorker.findOne({
+        professionalId: prof._id,
+        status: { $in: ['Active', 'ResignationPending', 'ResignationAccepted'] }
+      });
+
+      const isServingNotice = prof.isServingNotice || (activeWorker ? ['ResignationPending', 'ResignationAccepted'].includes(activeWorker.status) : false);
+      const noticeStartDate = prof.noticeStartDate || ((activeWorker && isServingNotice) ? activeWorker.resignationSubmittedDate : null);
+      const noticeEndDate = prof.noticeEndDate || ((activeWorker && isServingNotice) ? activeWorker.lastWorkingDate : null);
+      const isEmployed = activeWorker ? activeWorker.status === 'Active' : false;
+
+      // Retrieve direct hire stats
+      const allRequests = await DirectHireRequest.find({
+        contractorId: req.user.id,
+        professionalId: prof._id
+      });
+      const totalAttempts = allRequests.length;
+      const lastRejected = allRequests.filter(r => r.status === 'Rejected').sort((a,b) => b.updatedAt - a.updatedAt)[0];
+      let cooldownActive = false;
+      let cooldownHoursLeft = 0;
+      if (lastRejected) {
+        const cooldownMs = 48 * 60 * 60 * 1000;
+        const timeSinceRejection = Date.now() - new Date(lastRejected.rejectedAt || lastRejected.updatedAt).getTime();
+        if (timeSinceRejection < cooldownMs) {
+          cooldownActive = true;
+          cooldownHoursLeft = Math.ceil((cooldownMs - timeSinceRejection) / (1000 * 60 * 60));
         }
       }
-      return pObj;
+
+      const profObj = prof.toObject ? prof.toObject() : prof;
+      profObj.isEmployed = isEmployed;
+      profObj.isServingNotice = isServingNotice;
+      profObj.noticeStartDate = noticeStartDate;
+      profObj.noticeEndDate = noticeEndDate;
+      profObj.directHireStats = {
+        totalAttempts,
+        cooldownActive,
+        cooldownHoursLeft
+      };
+
+      return {
+        _id: post ? post._id : prof._id, // fallback to user id if no post exists
+        professionalId: profObj,
+        jobRole: post ? post.jobRole : prof.jobRole,
+        yearsOfExperience: post ? post.yearsOfExperience : prof.yearsOfExperience,
+        locationPreference: post ? post.locationPreference : prof.locationPreference,
+        expectedSalary: post ? post.expectedSalary : 'Negotiable',
+        availableFrom: post ? post.availableFrom : new Date(),
+        skillTags: post ? post.skillTags : [],
+        isServingNotice,
+        noticeStartDate,
+        noticeEndDate,
+        isEmployed,
+        isCrewPost: post ? post.isCrewPost : false,
+        crewMembers: post ? post.crewMembers : [],
+        crewSize: post ? post.crewSize : 1
+      };
     }));
 
     res.json(postsWithStatus);
@@ -576,26 +702,41 @@ exports.getAllAvailability = async (req, res) => {
 
 exports.directHireRequest = async (req, res) => {
   try {
-    const professionalId = req.params.professionalId;
-    const { jobRole, workSiteLocation, salary, duration, jobPostId } = req.body;
+    const { jobRole, workSiteLocation, salary, duration, jobPostId, noticePeriodDays } = req.body;
+    const { professionalId } = req.params;
     
     const contractor = await User.findById(req.user.id);
     const professional = await User.findById(professionalId);
     
     if (!professional) return res.status(404).json({ message: 'Professional not found' });
 
-    // Check direct hire retry cooldown (7 days block on retry)
-    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-    const recentDeclinedRequest = await DirectHireRequest.findOne({
+    // Enforce attempts limit and 48-hour retry cooldown
+    const pastRequestsCount = await DirectHireRequest.countDocuments({
+      contractorId: req.user.id,
+      professionalId
+    });
+    const attemptNumber = pastRequestsCount + 1;
+    if (attemptNumber > 3) {
+      return res.status(403).json({ message: 'You have reached the maximum number of hire requests for this professional.' });
+    }
+
+    const lastRejected = await DirectHireRequest.findOne({
       contractorId: req.user.id,
       professionalId,
-      status: 'Rejected',
-      updatedAt: { $gte: sevenDaysAgo }
-    });
+      status: 'Rejected'
+    }).sort({ updatedAt: -1 });
 
-    if (recentDeclinedRequest) {
-      const daysLeft = Math.ceil((recentDeclinedRequest.updatedAt.getTime() + 7 * 24 * 60 * 60 * 1000 - Date.now()) / (1000 * 60 * 60 * 24));
-      return res.status(400).json({ message: `Cannot resend request. You must wait ${daysLeft} more day(s) since they declined your last request.` });
+    if (lastRejected) {
+      const cooldownMs = 48 * 60 * 60 * 1000;
+      const timeSinceRejection = Date.now() - new Date(lastRejected.rejectedAt || lastRejected.updatedAt).getTime();
+      if (timeSinceRejection < cooldownMs) {
+        const hoursLeft = Math.ceil((cooldownMs - timeSinceRejection) / (1000 * 60 * 60));
+        return res.status(429).json({ message: `Please wait ${hoursLeft} more hour(s) before sending another request.` });
+      }
+    }
+
+    if (professional.isServingNotice) {
+      return res.status(400).json({ message: 'Cannot hire candidate. They are currently serving a notice period.' });
     }
 
     const HiredWorker = require('../models/HiredWorker');
@@ -616,7 +757,9 @@ exports.directHireRequest = async (req, res) => {
       jobRole,
       workSiteLocation,
       salary,
-      duration
+      duration,
+      attemptNumber,
+      noticePeriodDays: noticePeriodDays !== undefined ? Number(noticePeriodDays) : 7
     });
     await request.save();
 
@@ -682,16 +825,20 @@ exports.joinDirectHire = async (req, res) => {
     const requestId = req.params.id;
     const professionalId = req.user.id;
 
-    // Transactional block check for existing active join
+    // Transactional block check for existing active join or notice period
     const existingJoin = await HiredWorker.findOne({ 
       professionalId, 
-      status: 'Active' 
+      status: { $in: ['Active', 'ResignationPending', 'ResignationAccepted'] } 
     }).session(session);
     
     if (existingJoin) {
       await session.abortTransaction();
       session.endSession();
-      return res.status(400).json({ message: 'You are already working with a contractor.' });
+      if (existingJoin.status === 'Active') {
+        return res.status(400).json({ message: 'You are already working with a contractor.' });
+      } else {
+        return res.status(400).json({ message: 'You cannot join a new position while serving your notice period.' });
+      }
     }
 
     const request = await DirectHireRequest.findOne({ _id: requestId, professionalId }).session(session);
@@ -717,6 +864,12 @@ exports.joinDirectHire = async (req, res) => {
     request.status = 'Joined';
     await request.save({ session });
 
+    const AvailabilityPost = require('../models/AvailabilityPost');
+    const post = await AvailabilityPost.findOne({ professionalId }).session(session);
+    const isCrewHire = post ? post.isCrewPost : false;
+    const crewDetails = post ? post.crewMembers : [];
+    const crewSize = post ? post.crewSize : 1;
+
     const hiredWorker = new HiredWorker({
       contractorId: request.contractorId,
       professionalId,
@@ -724,7 +877,11 @@ exports.joinDirectHire = async (req, res) => {
       jobRole: request.jobRole,
       salary: request.salary ? parseFloat(request.salary.replace(/[^0-9.]/g, '')) : null,
       workLocation: request.workSiteLocation,
-      status: 'Active'
+      status: 'Active',
+      noticePeriodDays: request.noticePeriodDays !== undefined ? request.noticePeriodDays : 7,
+      isCrewHire,
+      crewDetails,
+      crewSize
     });
     await hiredWorker.save({ session });
 
@@ -796,7 +953,7 @@ exports.joinDirectHire = async (req, res) => {
 
         const otherJobApps = await Application.find({
           jobPostId: jobPost._id,
-          status: { $in: ['Applied', 'Viewed', 'Shortlisted'] }
+          status: { $in: ['Applied', 'Viewed', 'Shortlisted', 'Hired'] }
         }).session(session);
 
         for (const otherApp of otherJobApps) {
@@ -906,6 +1063,7 @@ exports.rejectDirectHire = async (req, res) => {
 
     request.status = 'Rejected';
     request.rejectionReason = rejectionReason;
+    request.rejectedAt = new Date();
     await request.save();
 
     const profUser = await User.findById(professionalId);
@@ -1004,7 +1162,8 @@ exports.submitResignation = async (req, res) => {
     const contractorId = activeWorker.contractorId;
     const jobRole = activeWorker.jobRole;
 
-    const noticeEndDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    const noticeDays = activeWorker.noticePeriodDays !== undefined ? activeWorker.noticePeriodDays : 7;
+    const noticeEndDate = new Date(Date.now() + noticeDays * 24 * 60 * 60 * 1000);
 
     // Update HiredWorker
     activeWorker.status = 'ResignationPending';
@@ -1015,6 +1174,7 @@ exports.submitResignation = async (req, res) => {
 
     // Update User so frontend correctly disables Hire buttons
     professional.isServingNotice = true;
+    professional.noticeStartDate = activeWorker.resignationSubmittedDate;
     professional.noticeEndDate = noticeEndDate;
     await professional.save();
 
@@ -1048,7 +1208,7 @@ exports.submitResignation = async (req, res) => {
     const notification = new Notification({
       userId: contractorId,
       title: 'Team Member Resigned',
-      message: `${professional.name} has resigned from ${professional.currentJobRole || 'their role'}. Reason: ${reason}. They will serve a 7-day notice period.`,
+      message: `${professional.name} has resigned from ${professional.currentJobRole || 'their role'}. Reason: ${reason}. They will serve a ${noticeDays}-day notice period.`,
       type: 'Hire',
       actionTab: NOTIFICATION_TABS.CONTRACTOR_MY_TEAM
     });
@@ -1200,16 +1360,20 @@ exports.joinJob = async (req, res) => {
     const applicationId = req.params.id;
     const professionalId = req.user.id;
 
-    // Transactional block check for existing active join
+    // Transactional block check for existing active join or notice period
     const existingJoin = await HiredWorker.findOne({ 
       professionalId, 
-      status: 'Active' 
+      status: { $in: ['Active', 'ResignationPending', 'ResignationAccepted'] } 
     }).session(session);
     
     if (existingJoin) {
       await session.abortTransaction();
       session.endSession();
-      return res.status(400).json({ message: 'You are already working with a contractor.' });
+      if (existingJoin.status === 'Active') {
+        return res.status(400).json({ message: 'You are already working with a contractor.' });
+      } else {
+        return res.status(400).json({ message: 'You cannot join a new position while serving your notice period.' });
+      }
     }
 
     // 1. Fetch the application being joined
@@ -1239,12 +1403,12 @@ exports.joinJob = async (req, res) => {
     application.status = 'Joined';
     await application.save({ session });
 
-    // 4. Auto-withdraw all other pending/applied/shortlisted applications by this professional
+    // 4. Auto-withdraw all other pending/applied/shortlisted/hired applications by this professional
     await Application.updateMany(
       {
         professionalId,
         _id: { $ne: applicationId },
-        status: { $in: ['Applied', 'Viewed', 'Shortlisted'] }
+        status: { $in: ['Applied', 'Viewed', 'Shortlisted', 'Hired'] }
       },
       { status: 'Withdrawn' },
       { session }
@@ -1259,6 +1423,12 @@ exports.joinJob = async (req, res) => {
     }
 
     // 6. Create HiredWorker record
+    const AvailabilityPost = require('../models/AvailabilityPost');
+    const post = await AvailabilityPost.findOne({ professionalId }).session(session);
+    const isCrewHire = post ? post.isCrewPost : false;
+    const crewDetails = post ? post.crewMembers : [];
+    const crewSize = post ? post.crewSize : 1;
+
     const hiredWorker = new HiredWorker({
       contractorId: application.contractorId,
       professionalId,
@@ -1268,7 +1438,11 @@ exports.joinJob = async (req, res) => {
       salary: jobPost.salary,
       salaryType: jobPost.salaryType,
       workLocation: jobPost.workLocation,
-      status: 'Active'
+      status: 'Active',
+      noticePeriodDays: jobPost.noticePeriodDays !== undefined ? jobPost.noticePeriodDays : 7,
+      isCrewHire,
+      crewDetails,
+      crewSize
     });
     await hiredWorker.save({ session });
 
@@ -1293,7 +1467,7 @@ exports.joinJob = async (req, res) => {
       title: 'Professional Has Joined!',
       message: `${professional.name} has accepted the position and joined as ${jobPost.jobRole}!`,
       relatedId: jobPost._id,
-      actionTab: NOTIFICATION_TABS.CONTRACTOR_JOB_POSTS
+      actionTab: NOTIFICATION_TABS.CONTRACTOR_OVERVIEW
     });
     await contractorNotification.save({ session });
 
@@ -1482,6 +1656,135 @@ exports.cancelResignation = async (req, res) => {
     }
 
     res.json({ message: 'Resignation cancelled successfully.' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+exports.updateVisibilityStatus = async (req, res) => {
+  try {
+    const { isVisible, availabilityStatus } = req.body;
+
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    user.isVisible = isVisible;
+    user.availabilityStatus = availabilityStatus;
+    user.visibilityUpdatedAt = Date.now();
+    await user.save();
+
+    if (isVisible && availabilityStatus === 'Online') {
+      const availabilityPost = await AvailabilityPost.findOne({ professionalId: user._id });
+      
+      const HiredWorker = require('../models/HiredWorker');
+      const activeWorker = await HiredWorker.findOne({
+        professionalId: user._id,
+        status: { $in: ['Active', 'ResignationPending', 'ResignationAccepted'] }
+      });
+
+      const isEmployed = activeWorker ? activeWorker.status === 'Active' : false;
+      const isServingNotice = activeWorker ? ['ResignationPending', 'ResignationAccepted'].includes(activeWorker.status) : false;
+      const noticeStartDate = (activeWorker && isServingNotice) ? activeWorker.resignationSubmittedDate : null;
+      const noticeEndDate = (activeWorker && isServingNotice) ? activeWorker.lastWorkingDate : null;
+
+      // Find all contractors
+      const contractors = await User.find({ role: 'contractor' });
+      const io = getIO();
+
+      for (const contractor of contractors) {
+        const notification = new Notification({
+          userId: contractor._id,
+          title: 'New Professional Available',
+          message: `${user.name} is now available for hire as ${user.jobRole || 'Professional'} with ${user.yearsOfExperience || 0} years of experience and located at ${user.locationPreference || 'Not specified'}.`,
+          type: 'Job',
+          actionTab: NOTIFICATION_TABS.CONTRACTOR_BROWSE_PROFESSIONALS || 'browse-professionals'
+        });
+        await notification.save();
+
+        if (io) {
+          io.to(`user:${contractor._id}`).emit('newProfessionalAvailable', {
+            notification,
+            name: user.name,
+            jobRole: user.jobRole,
+            experience: user.yearsOfExperience,
+            location: user.locationPreference,
+            isVisible: user.isVisible,
+            professionalId: user._id,
+            avatar: user.avatar || null,
+            post: availabilityPost,
+            isEmployed,
+            isServingNotice,
+            noticeStartDate,
+            noticeEndDate
+          });
+        }
+      }
+    } else if (!isVisible && availabilityStatus === 'Offline') {
+      // Emit professionalWentOffline to all contractor rooms, EXCEPT the ones who have pending direct hire requests with this user
+      const contractors = await User.find({ role: 'contractor' });
+      const io = getIO();
+      if (io) {
+        const DirectHireRequest = require('../models/DirectHireRequest');
+        for (const contractor of contractors) {
+          const hasPending = await DirectHireRequest.findOne({
+            contractorId: contractor._id,
+            professionalId: user._id,
+            status: 'Pending'
+          });
+          if (!hasPending) {
+            io.to(`user:${contractor._id}`).emit('professionalWentOffline', {
+              professionalId: user._id
+            });
+          }
+        }
+      }
+    }
+
+    res.json(user);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+exports.getProfessionalAvailability = async (req, res) => {
+  try {
+    const post = await AvailabilityPost.findOne({ professionalId: req.params.id });
+    res.json(post);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+exports.getEmploymentHistory = async (req, res) => {
+  try {
+    const history = await HiredWorker.find({
+      professionalId: req.params.id,
+      status: { $in: ['Completed', 'Resigned', 'Released'] }
+    })
+    .populate('contractorId', 'name companyName')
+    .sort({ joinedAt: -1 });
+
+    const formatted = history.map(h => {
+      const start = h.joinedAt || h.createdAt;
+      const end = h.lastWorkingDate || h.updatedAt;
+      
+      let duration = 'N/A';
+      if (start && end) {
+        const months = Math.round((new Date(end) - new Date(start)) / (1000 * 60 * 60 * 24 * 30));
+        duration = months < 1 ? 'Less than a month' : months === 1 ? '1 month' : `${months} months`;
+      }
+
+      return {
+        contractorName: h.contractorId?.companyName || h.contractorId?.name || 'Unknown Contractor',
+        jobRole: h.jobRole,
+        startDate: start,
+        endDate: end,
+        status: h.status,
+        duration
+      };
+    });
+
+    res.json(formatted);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

@@ -6,7 +6,8 @@ import { useAuth } from '../../context/AuthContext';
 import {
   IconBriefcase, IconMapPin, IconClock, IconCurrencyRupee,
   IconFilter, IconSearch, IconChevronRight, IconCircleCheck,
-  IconAlertCircle, IconMapRoute, IconX, IconDoorExit, IconRefresh
+  IconAlertCircle, IconMapRoute, IconX, IconDoorExit, IconRefresh,
+  IconCalendar
 } from '@tabler/icons-react';
 import toast from 'react-hot-toast';
 import ResignationModal from './ResignationModal';
@@ -45,6 +46,7 @@ const JobsFeedTab = ({ openMapJobId, setOpenMapJobId, directHireRequests = [], s
     contractorId: null
   });
   const [isResignModalOpen, setIsResignModalOpen] = useState(false);
+  const [applyingJobId, setApplyingJobId] = useState(null);
 
   useEffect(() => {
     fetchJobs();
@@ -125,12 +127,17 @@ const JobsFeedTab = ({ openMapJobId, setOpenMapJobId, directHireRequests = [], s
   };
 
   const handleApply = async (jobId) => {
+    if (applyingJobId) return;
+    setApplyingJobId(jobId);
     try {
       await api.post(`/api/professional/jobs/${jobId}/apply`);
       setJobs(jobs.map(j => j._id === jobId ? { ...j, hasApplied: true } : j));
+      toast.success('Applied successfully!');
     } catch (err) {
       console.error(err);
-      alert(err.response?.data?.message || 'Failed to apply');
+      toast.error(err.response?.data?.message || 'Failed to apply');
+    } finally {
+      setApplyingJobId(null);
     }
   };
 
@@ -180,6 +187,14 @@ const JobsFeedTab = ({ openMapJobId, setOpenMapJobId, directHireRequests = [], s
 
   return (
     <div className="space-y-8">
+      {/* Sticky Notice Period Bar */}
+      {workingStatus.isInNoticePeriod && (
+        <div className="bg-yellow-500 text-slate-900 px-6 py-3 rounded-2xl font-black text-sm flex items-center gap-2 shadow-md sticky top-0 z-20">
+          <IconAlertCircle size={18} />
+          <span>Notice Period Active — You can apply but cannot join until the last working date.</span>
+        </div>
+      )}
+
       {/* Search & Filter */}
       <div className="bg-white dark:bg-slate-900 p-6 rounded-[35px] border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col md:flex-row gap-4 items-center">
         <div className="flex-1 relative w-full">
@@ -258,6 +273,7 @@ const JobsFeedTab = ({ openMapJobId, setOpenMapJobId, directHireRequests = [], s
             openMapJobId={openMapJobId}
             setOpenMapJobId={setOpenMapJobId}
             setIsResignModalOpen={setIsResignModalOpen}
+            applyingJobId={applyingJobId}
           />
         ))}
         {sortedJobs.length === 0 && (
@@ -274,6 +290,7 @@ const JobsFeedTab = ({ openMapJobId, setOpenMapJobId, directHireRequests = [], s
         onClose={() => setIsResignModalOpen(false)}
         contractorName={workingStatus.contractorName}
         jobRole={user?.jobRole || 'Professional'}
+        noticePeriodDays={workingStatus.noticePeriodDays}
         onSuccess={() => {
           fetchWorkingStatus();
           fetchJobs();
@@ -283,7 +300,7 @@ const JobsFeedTab = ({ openMapJobId, setOpenMapJobId, directHireRequests = [], s
   );
 };
 
-const JobCard = ({ job, user, workingStatus, directHireRequests, onApply, onJoin, onReject, openMapJobId, setOpenMapJobId, setIsResignModalOpen }) => {
+const JobCard = ({ job, user, workingStatus, directHireRequests, onApply, onJoin, onReject, openMapJobId, setOpenMapJobId, setIsResignModalOpen, applyingJobId }) => {
   const hasCoordinates = job.workSiteLocation && job.workSiteLocation.coordinates && job.workSiteLocation.coordinates.length === 2;
   const userHasCoordinates = user?.location?.coordinates && user.location.coordinates.length === 2;
   const isMapOpen = openMapJobId === job._id;
@@ -335,19 +352,26 @@ const JobCard = ({ job, user, workingStatus, directHireRequests, onApply, onJoin
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-4 mb-8">
-          <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl flex items-center gap-3">
-            <IconMapPin size={20} className="text-slate-400" />
-            <div>
-              <p className="text-[10px] font-black uppercase text-slate-400 leading-tight">Location</p>
-              <p className="text-sm font-bold text-primary dark:text-blue-100">{job.workLocation}</p>
+        <div className="grid grid-cols-3 gap-2 mb-8">
+          <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-2xl flex items-center gap-2">
+            <IconMapPin size={16} className="text-slate-400 shrink-0" />
+            <div className="min-w-0">
+              <p className="text-[8px] font-black uppercase text-slate-400 leading-tight">Location</p>
+              <p className="text-xs font-bold text-primary dark:text-blue-100 truncate" title={job.workLocation}>{job.workLocation}</p>
             </div>
           </div>
-          <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl flex items-center gap-3">
-            <IconClock size={20} className="text-slate-400" />
-            <div>
-              <p className="text-[10px] font-black uppercase text-slate-400 leading-tight">Posted</p>
-              <p className="text-sm font-bold text-primary dark:text-blue-100">{new Date(job.createdAt).toLocaleDateString()}</p>
+          <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-2xl flex items-center gap-2">
+            <IconClock size={16} className="text-slate-400 shrink-0" />
+            <div className="min-w-0">
+              <p className="text-[8px] font-black uppercase text-slate-400 leading-tight">Posted</p>
+              <p className="text-xs font-bold text-primary dark:text-blue-100">{new Date(job.createdAt).toLocaleDateString()}</p>
+            </div>
+          </div>
+          <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-2xl flex items-center gap-2">
+            <IconCalendar size={16} className="text-slate-400 shrink-0" />
+            <div className="min-w-0">
+              <p className="text-[8px] font-black uppercase text-slate-400 leading-tight">Starts</p>
+              <p className="text-xs font-bold text-accent">{job.startDate ? new Date(job.startDate).toLocaleDateString() : 'Immediate'}</p>
             </div>
           </div>
         </div>
@@ -379,12 +403,30 @@ const JobCard = ({ job, user, workingStatus, directHireRequests, onApply, onJoin
 
           {matchingDirectHire && matchingDirectHire.status === 'Pending' ? (
             <div className="flex items-center gap-2">
-              <button
-                onClick={() => onJoin(matchingDirectHire._id)}
-                className="bg-green-500 hover:bg-green-600 text-white px-6 py-3 rounded-2xl font-black text-sm transition-all shadow-lg shadow-green-500/20"
-              >
-                Join Now
-              </button>
+              {user?.isServingNotice ? (
+                <button
+                  disabled
+                  className="bg-slate-200 dark:bg-slate-800 text-slate-400 px-6 py-3 rounded-2xl font-black text-sm cursor-not-allowed"
+                  title={`You are serving a notice period until ${new Date(user.noticeEndDate).toLocaleDateString()}.`}
+                >
+                  Join Unavailable (Notice Period)
+                </button>
+              ) : workingStatus.isWorking ? (
+                <button
+                  disabled
+                  className="bg-slate-200 dark:bg-slate-800 text-slate-400 px-6 py-3 rounded-2xl font-black text-sm cursor-not-allowed"
+                  title="You are currently working on another job. You must resign first."
+                >
+                  Join Unavailable (Employed)
+                </button>
+              ) : (
+                <button
+                  onClick={() => onJoin(matchingDirectHire._id)}
+                  className="bg-green-500 hover:bg-green-600 text-white px-6 py-3 rounded-2xl font-black text-sm transition-all shadow-lg shadow-green-500/20"
+                >
+                  Join Now
+                </button>
+              )}
               <button
                 onClick={() => onReject(matchingDirectHire._id)}
                 className="bg-red-100 hover:bg-red-200 text-red-600 dark:bg-red-900/30 dark:hover:bg-red-900/50 px-6 py-3 rounded-2xl font-black text-sm transition-all"
@@ -403,9 +445,14 @@ const JobCard = ({ job, user, workingStatus, directHireRequests, onApply, onJoin
           ) : (
             <button
               onClick={onApply}
-              className="bg-accent text-white px-8 py-3 rounded-2xl font-black text-sm flex items-center gap-2 hover:shadow-lg hover:shadow-orange-500/20 hover:-translate-y-0.5 transition-all active:scale-95"
+              disabled={applyingJobId === job._id}
+              className="bg-accent text-white px-8 py-3 rounded-2xl font-black text-sm flex items-center gap-2 hover:shadow-lg hover:shadow-orange-500/20 hover:-translate-y-0.5 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center min-w-[140px]"
             >
-              Apply Now <IconChevronRight size={18} />
+              {applyingJobId === job._id ? (
+                <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+              ) : (
+                <>Apply Now <IconChevronRight size={18} /></>
+              )}
             </button>
           )}
         </div>

@@ -5,9 +5,12 @@ import toast from 'react-hot-toast';
 import { 
   IconBriefcase, IconUsers, IconFileInvoice, IconBell,
   IconCheck, IconChevronRight, IconTrendingUp, IconCircleCheck, IconHammer,
-  IconStar, IconX, IconSend
+  IconStar, IconX, IconSend, IconAlertTriangle
 } from '@tabler/icons-react';
 import LeaveReviewModal from './LeaveReviewModal';
+import RetentionOfferModal from './RetentionOfferModal';
+import AttendanceLogModal from './AttendanceLogModal';
+import FileDisputeModal from '../FileDisputeModal';
 
 const StatCard = ({ icon: Icon, label, value, color }) => (
   <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 rounded-3xl shadow-sm hover:shadow-md transition-shadow">
@@ -32,6 +35,9 @@ const OverviewTab = ({ setActiveTab }) => {
   const [hasPortfolio, setHasPortfolio] = useState(false);
   const [loading, setLoading] = useState(true);
   const [reviewProfessional, setReviewProfessional] = useState(null);
+  const [retentionOfferMember, setRetentionOfferMember] = useState(null);
+  const [attendanceProfessional, setAttendanceProfessional] = useState(null);
+  const [disputeHiredWorkerId, setDisputeHiredWorkerId] = useState(null);
 
   // Hire Again state
   const [hireAgainMember, setHireAgainMember] = useState(null);
@@ -44,29 +50,30 @@ const OverviewTab = ({ setActiveTab }) => {
   });
   const [hireAgainLoading, setHireAgainLoading] = useState(false);
 
+  const fetchData = async () => {
+    try {
+      const [statsRes, interestsRes, teamRes, portfolioRes, pastTeamRes, jobsRes] = await Promise.all([
+        api.get('/api/contractor/stats'),
+        api.get('/api/contractor/interests'),
+        api.get('/api/contractor/team'),
+        api.get('/api/contractor/portfolio'),
+        api.get('/api/contractor/past-team'),
+        api.get('/api/contractor/jobs')
+      ]);
+      setStats(statsRes.data);
+      setInterests(interestsRes.data.slice(0, 5));
+      setTeam(teamRes.data);
+      setHasPortfolio(portfolioRes.data.length > 0);
+      setPastTeam(pastTeamRes.data);
+      setJobs(jobsRes.data.filter(j => !j.isFilled));
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const [statsRes, interestsRes, teamRes, portfolioRes, pastTeamRes, jobsRes] = await Promise.all([
-          api.get('/api/contractor/stats'),
-          api.get('/api/contractor/interests'),
-          api.get('/api/contractor/team'),
-          api.get('/api/contractor/portfolio'),
-          api.get('/api/contractor/past-team'),
-          api.get('/api/contractor/jobs')
-        ]);
-        setStats(statsRes.data);
-        setInterests(interestsRes.data.slice(0, 5));
-        setTeam(teamRes.data);
-        setHasPortfolio(portfolioRes.data.length > 0);
-        setPastTeam(pastTeamRes.data);
-        setJobs(jobsRes.data.filter(j => !j.isFilled));
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setLoading(false);
-      }
-    };
     fetchData();
 
     import('../../socket').then(({ default: socket }) => {
@@ -225,29 +232,51 @@ const OverviewTab = ({ setActiveTab }) => {
             {team.length > 0 ? team.map((member, i) => (
               <div key={member._id || i} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 rounded-[32px] flex flex-col gap-4 hover:border-accent transition-all shadow-sm group">
                  <div className="flex items-center gap-4">
-                   <div className="w-14 h-14 rounded-2xl bg-slate-50 dark:bg-slate-800 flex items-center justify-center font-black text-xl text-primary dark:text-white border border-slate-100 dark:border-slate-700 uppercase group-hover:scale-110 transition-transform">
-                      {(member.name || member.professionalId?.name)?.charAt(0) || 'P'}
-                   </div>
-                   <div className="flex-1 min-w-0">
-                      <h4 className="font-black text-primary dark:text-white truncate">{member.name || member.professionalId?.name || 'Unknown'}</h4>
-                      <p className="text-[10px] font-black text-accent uppercase tracking-widest">{member.jobRole || member.professionalId?.jobRole || 'Professional'}</p>
-                      <div className="flex items-center gap-3 mt-1">
-                         <div className="flex items-center gap-1">
-                            <span className={`w-2 h-2 rounded-full ${member.isServingNotice ? 'bg-orange-500 animate-pulse' : 'bg-green-500'}`} />
-                            <span className="text-[10px] font-bold text-slate-400 uppercase">{member.isServingNotice ? 'Serving Notice' : 'Active'}</span>
-                         </div>
-                         {(member.locationPreference || member.professionalId?.locationPreference) && (
-                           <span className="text-[10px] font-bold text-slate-400 truncate">• {member.locationPreference || member.professionalId?.locationPreference}</span>
-                         )}
-                      </div>
-                   </div>
-                   <button
-                      onClick={() => setReviewProfessional(member)}
-                      className="w-10 h-10 rounded-xl bg-orange-50 dark:bg-orange-900/20 text-orange-500 flex items-center justify-center hover:bg-orange-100 hover:scale-110 transition-all shrink-0"
-                      title="Leave a Review"
+                   <div 
+                     onClick={() => setAttendanceProfessional(member)}
+                     className="flex items-center gap-4 flex-1 min-w-0 cursor-pointer hover:opacity-85 transition-opacity"
+                     title="View Attendance Log"
                    >
-                      <IconStar size={20} />
-                   </button>
+                     <div className="w-14 h-14 rounded-2xl bg-slate-50 dark:bg-slate-800 flex items-center justify-center font-black text-xl text-primary dark:text-white border border-slate-100 dark:border-slate-700 uppercase group-hover:scale-110 transition-transform">
+                        {(member.name || member.professionalId?.name)?.charAt(0) || 'P'}
+                     </div>
+                     <div className="flex-1 min-w-0">
+                        <h4 className="font-black text-primary dark:text-white truncate">{member.name || member.professionalId?.name || 'Unknown'}</h4>
+                        <p className="text-[10px] font-black text-accent uppercase tracking-widest flex items-center gap-1.5 flex-wrap">
+                          {member.jobRole || member.professionalId?.jobRole || 'Professional'}
+                          {member.isCrewHire && (
+                            <span className="bg-blue-600 text-white text-[9px] font-black uppercase px-2 py-0.5 rounded-md flex items-center gap-0.5 shrink-0" title="Crew Hire Badge">
+                              👥 Crew of {member.crewSize || 1}
+                            </span>
+                          )}
+                        </p>
+                        <div className="flex items-center gap-3 mt-1">
+                           <div className="flex items-center gap-1">
+                              <span className={`w-2 h-2 rounded-full ${member.isServingNotice ? 'bg-orange-500 animate-pulse' : 'bg-green-500'}`} />
+                              <span className="text-[10px] font-bold text-slate-400 uppercase">{member.isServingNotice ? 'Serving Notice' : 'Active'}</span>
+                           </div>
+                           {(member.locationPreference || member.professionalId?.locationPreference) && (
+                             <span className="text-[10px] font-bold text-slate-400 truncate">• {member.locationPreference || member.professionalId?.locationPreference}</span>
+                           )}
+                        </div>
+                     </div>
+                   </div>
+                    <div className="flex gap-2 shrink-0">
+                      <button
+                         onClick={() => setReviewProfessional(member)}
+                         className="w-10 h-10 rounded-xl bg-orange-50 dark:bg-orange-900/20 text-orange-500 flex items-center justify-center hover:bg-orange-100 hover:scale-110 transition-all"
+                         title="Leave a Review"
+                      >
+                         <IconStar size={20} />
+                      </button>
+                      <button
+                         onClick={() => setDisputeHiredWorkerId(member.hiredWorkerId || member._id)}
+                         className="w-10 h-10 rounded-xl bg-red-50 dark:bg-red-900/20 text-red-500 flex items-center justify-center hover:bg-red-100 hover:scale-110 transition-all"
+                         title="File a Dispute"
+                      >
+                         <IconAlertTriangle size={20} />
+                      </button>
+                    </div>
                  </div>
 
                  {member.isServingNotice && (
@@ -259,15 +288,10 @@ const OverviewTab = ({ setActiveTab }) => {
                      </p>
                      <div className="flex gap-2">
                        <button 
-                         onClick={async () => {
-                           try {
-                             await api.post(`/api/contractor/team/request-to-stay/${member.professionalId?._id || member._id}`, { message: "Please stay with us, we value your work!" });
-                             toast.success('Request sent to professional.');
-                           } catch (err) { toast.error(err.response?.data?.message || 'Failed to send'); }
-                         }}
-                         className="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-xl text-xs font-black transition-all hover:bg-slate-200"
+                         onClick={() => setRetentionOfferMember(member)}
+                         className="px-4 py-2 bg-orange-500 text-white rounded-xl text-xs font-black transition-all hover:bg-orange-600"
                        >
-                         Request to Stay
+                         Offer Retention
                        </button>
                      </div>
                    </div>
@@ -430,6 +454,26 @@ const OverviewTab = ({ setActiveTab }) => {
           </div>
         )}
       </AnimatePresence>
+
+      <RetentionOfferModal
+        isOpen={!!retentionOfferMember}
+        onClose={() => setRetentionOfferMember(null)}
+        member={retentionOfferMember}
+        onSuccess={fetchData}
+      />
+
+      <AttendanceLogModal
+        isOpen={!!attendanceProfessional}
+        onClose={() => setAttendanceProfessional(null)}
+        member={attendanceProfessional}
+      />
+
+      <FileDisputeModal
+        isOpen={!!disputeHiredWorkerId}
+        onClose={() => setDisputeHiredWorkerId(null)}
+        hiredWorkerId={disputeHiredWorkerId}
+        onSuccess={() => {}}
+      />
     </div>
   );
 };

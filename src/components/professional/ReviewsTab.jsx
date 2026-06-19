@@ -15,7 +15,8 @@ const ReviewsTab = () => {
   const [replyLoading, setReplyLoading] = useState(false);
 
   // Sub-tabs: 'received' or 'left'
-  const [subTab, setSubTab] = useState('received');
+  const savedSubTab = localStorage.getItem('reviewsSubTab');
+  const [subTab, setSubTab] = useState(savedSubTab || 'received');
   const [reviewsLeft, setReviewsLeft] = useState([]);
   const [reviewsLeftLoading, setReviewsLeftLoading] = useState(false);
 
@@ -24,6 +25,27 @@ const ReviewsTab = () => {
       setLoading(false);
     });
   }, []);
+
+  useEffect(() => {
+    if (loading) return;
+    const highlightId = localStorage.getItem('highlightReviewId');
+    if (highlightId) {
+      localStorage.removeItem('highlightReviewId');
+      if (localStorage.getItem('reviewsSubTab')) {
+        localStorage.removeItem('reviewsSubTab');
+      }
+      setTimeout(() => {
+        const element = document.getElementById(`review-${highlightId}`);
+        if (element) {
+          element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          element.classList.add('ring-4', 'ring-accent', 'ring-offset-4', 'dark:ring-offset-slate-900', 'transition-all', 'duration-500');
+          setTimeout(() => {
+            element.classList.remove('ring-4', 'ring-accent', 'ring-offset-4', 'dark:ring-offset-slate-900');
+          }, 3000);
+        }
+      }, 100);
+    }
+  }, [loading, subTab]);
 
   const fetchReviews = async () => {
     try {
@@ -159,6 +181,7 @@ const ReviewsTab = () => {
             {reviews.length > 0 ? reviews.map(review => (
               <motion.div 
                 key={review._id}
+                id={`review-${review._id}`}
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 className="bg-white dark:bg-slate-900 rounded-[32px] border border-slate-200 dark:border-slate-800 p-6 sm:p-8 shadow-sm"
@@ -266,6 +289,7 @@ const ReviewsTab = () => {
             reviewsLeft.map(review => (
               <motion.div 
                 key={review._id}
+                id={`review-${review._id}`}
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 className="bg-white dark:bg-slate-900 rounded-[32px] border border-slate-200 dark:border-slate-800 p-6 sm:p-8 shadow-sm"

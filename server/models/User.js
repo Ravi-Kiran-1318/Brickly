@@ -53,8 +53,14 @@ const userSchema = new mongoose.Schema({
   // Tracking
   hiredBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   isAvailable: { type: Boolean, default: false },
+  isVisible: { type: Boolean, default: false },
+  visibilityUpdatedAt: { type: Date, default: null },
+  availabilityStatus: { type: String, enum: ['Online', 'Offline'], default: 'Offline' },
   jobAlerts: { type: Boolean, default: true },
   pendingJobAlertEmails: [{ type: Object }],
+  notificationPreferences: {
+    jobDigestFrequency: { type: String, enum: ['daily', 'weekly', 'off'], default: 'daily' }
+  },
   isVerified: { type: Boolean, default: false },
   phoneVerified: { type: Boolean, default: false },
   phoneOtp: { type: String },
@@ -149,7 +155,7 @@ const handleContractorDeletion = async (contractorId) => {
     // 4. Applications to Position Cancelled
     const apps = await Application.find({
       contractorId,
-      status: { $in: ['Applied', 'Viewed', 'Shortlisted'] }
+      status: { $in: ['Applied', 'Viewed', 'Shortlisted', 'Hired'] }
     });
 
     for (const app of apps) {

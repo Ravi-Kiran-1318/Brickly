@@ -10,11 +10,15 @@ const directHireRequestSchema = new mongoose.Schema({
   duration: { type: String },
   status: { 
     type: String, 
-    enum: ['Pending', 'Joined', 'Rejected', 'Resigned'], 
+    enum: ['Pending', 'Joined', 'Rejected', 'Resigned', 'Position Filled', 'Cancelled'], 
     default: 'Pending' 
   },
   rejectionReason: { type: String, default: '' },
-  createdAt: { type: Date, default: Date.now }
+  attemptNumber: { type: Number, default: 1 },
+  rejectedAt: { type: Date },
+  noticePeriodDays: { type: Number, default: 7, min: 0, max: 30 }
+}, {
+  timestamps: true
 });
 
 module.exports = mongoose.model('DirectHireRequest', directHireRequestSchema);
