@@ -9,7 +9,7 @@ import {
   IconLayoutDashboard, IconBriefcase, IconUsers, IconPhoto, 
   IconStar, IconPackage, IconFileInvoice, IconTruck, 
   IconTag, IconBell, IconLogout, IconMenu2, IconX,
-  IconSun, IconMoon, IconHelmet, IconHammer, IconAlertTriangle
+  IconSun, IconMoon, IconHelmet, IconHammer, IconAlertTriangle, IconCalendarStats
 } from '@tabler/icons-react';
 import { useTheme } from '../context/ThemeContext';
 import ThemeToggle from '../components/ThemeToggle';
@@ -28,6 +28,7 @@ import DealsFeedTab from '../components/contractor/DealsFeedTab';
 import NotificationsTab from '../components/contractor/NotificationsTab';
 import ContractsTab from '../components/contractor/ContractsTab';
 import DisputesTab from '../components/DisputesTab';
+import AttendanceTab from '../components/contractor/AttendanceTab';
 
 const ContractorDashboard = () => {
   const { user, logout } = useAuth();
@@ -119,6 +120,7 @@ const ContractorDashboard = () => {
     { id: NOTIFICATION_TABS.CONTRACTOR_DEALS_FEED, label: 'Deals Feed', icon: IconTag },
     { id: 'project-progress', label: 'Project Progress', icon: IconHammer },
     { id: 'disputes', label: 'Disputes', icon: IconAlertTriangle },
+    { id: 'attendance', label: 'Attendance', icon: IconCalendarStats },
   ];
 
   const renderActiveTab = () => {
@@ -134,6 +136,7 @@ const ContractorDashboard = () => {
       case NOTIFICATION_TABS.CONTRACTOR_DEALS_FEED: return <DealsFeedTab />;
       case 'project-progress': return <ContractsTab tabData={tabData} setTabData={setTabData} />;
       case 'disputes': return <DisputesTab />;
+      case 'attendance': return <AttendanceTab />;
       case NOTIFICATION_TABS.CONTRACTOR_NOTIFICATIONS: return <NotificationsTab setUnreadCount={setUnreadCount} setActiveTab={changeTab} />;
       default: return <OverviewTab setActiveTab={changeTab} />;
     }

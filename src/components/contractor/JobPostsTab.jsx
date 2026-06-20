@@ -123,7 +123,7 @@ const JobPostsTab = () => {
   };
 
   const handleHire = async (jobId, professionalId) => {
-    if (!window.confirm("Are you sure you want to hire this professional? This will fill the job post.")) return;
+    if (!window.confirm("Are you sure you want to hire this professional?")) return;
     try {
       await api.post(`/api/contractor/jobs/${jobId}/hire/${professionalId}`);
       toast.success("Professional hired!");
@@ -133,7 +133,6 @@ const JobPostsTab = () => {
         if (job._id === jobId) {
           return {
             ...job,
-            isFilled: true,
             applicants: job.applicants.map(app =>
               app.professionalId?._id === professionalId 
                 ? { ...app, status: 'Hired' }

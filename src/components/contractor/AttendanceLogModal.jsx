@@ -171,19 +171,58 @@ const AttendanceLogModal = ({ isOpen, onClose, member }) => {
                     const record = getRecordForDay(day);
                     const isPresent = record?.status === 'present';
                     
+                    const dateStr = `${selectedMonth}-${String(day).padStart(2, '0')}`;
+                    const currentDateObj = new Date(dateStr);
+                    currentDateObj.setHours(0,0,0,0);
+                    
+                    const start = new Date(member.startDate);
+                    start.setHours(0,0,0,0);
+                    
+                    const end = member.endDate ? new Date(member.endDate) : null;
+                    if (end) end.setHours(0,0,0,0);
+                    
+                    const today = new Date();
+                    today.setHours(0,0,0,0);
+                    
+                    const isWithinContract = currentDateObj >= start && (!end || currentDateObj <= end);
+                    const isPastOrToday = currentDateObj <= today;
+                    const isWorkDay = isWithinContract && isPastOrToday;
+                    const isAbsent = isWorkDay && !isPresent;
+                    
+                    let cellClass = '';
+                    let tooltip = '';
+                    
+                    if (isPresent) {
+                      cellClass = 'bg-green-500 text-white shadow-md shadow-green-500/20';
+                      tooltip = record.checkInAt 
+                        ? `Checked in: ${new Date(record.checkInAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}`
+                        : 'Present';
+                    } else {
+                      const isToday = currentDateObj.getTime() === today.getTime();
+                      if (isToday && isWithinContract) {
+                        cellClass = 'bg-amber-500 text-white shadow-md shadow-amber-500/20';
+                        tooltip = 'Today (Pending check-in)';
+                      } else if (isAbsent) {
+                        cellClass = 'bg-red-500 text-white shadow-md shadow-red-500/20';
+                        tooltip = 'Absent';
+                      } else if (isWithinContract) {
+                        cellClass = 'bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-bold';
+                        tooltip = 'Scheduled Work Day';
+                      } else {
+                        cellClass = 'bg-slate-50/40 dark:bg-slate-950/40 border border-transparent text-slate-300 dark:text-slate-700 cursor-default pointer-events-none';
+                        tooltip = 'Out of Contract';
+                      }
+                    }
+                    
                     return (
                       <div 
                         key={`day-${day}`} 
-                        className={`h-10 flex flex-col items-center justify-center rounded-xl font-black text-xs transition-all relative group ${
-                          isPresent 
-                            ? 'bg-green-500 text-white shadow-md shadow-green-500/20' 
-                            : 'bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800 text-slate-700 dark:text-slate-300'
-                        }`}
+                        className={`h-10 flex flex-col items-center justify-center rounded-xl font-black text-xs transition-all relative group ${cellClass}`}
                       >
                         {day}
-                        {isPresent && record.checkInAt && (
-                          <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 hidden group-hover:block bg-slate-950 text-white text-[9px] font-bold py-1 px-2 rounded-md whitespace-nowrap z-20 shadow-lg">
-                            Checked in: {new Date(record.checkInAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                        {tooltip && (
+                          <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 hidden group-hover:block bg-slate-950 dark:bg-slate-800 text-white text-[9px] font-bold py-1 px-2 rounded-md whitespace-nowrap z-20 shadow-lg border border-slate-800 dark:border-slate-700">
+                            {tooltip}
                           </div>
                         )}
                       </div>
@@ -193,7 +232,27 @@ const AttendanceLogModal = ({ isOpen, onClose, member }) => {
               </div>
             )}
 
-            <div className="mt-8">
+            {/* Legend */}
+            <div className="mt-6 flex flex-wrap gap-x-4 gap-y-2 justify-center text-[10px] font-bold text-slate-400 uppercase tracking-wider border-t border-slate-100 dark:border-slate-800/80 pt-4">
+              <div className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 bg-green-500 rounded-md shadow-sm"></span>
+                <span>Present</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 bg-red-500 rounded-md shadow-sm"></span>
+                <span>Absent</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 bg-amber-500 rounded-md shadow-sm"></span>
+                <span>Pending Today</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-md"></span>
+                <span>Scheduled</span>
+              </div>
+            </div>
+
+            <div className="mt-6">
               <button
                 onClick={onClose}
                 className="w-full py-3.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-2xl font-black text-xs uppercase tracking-wider transition-all"

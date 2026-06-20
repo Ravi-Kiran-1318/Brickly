@@ -53,28 +53,51 @@ exports.getStats = async (req, res) => {
 
 exports.getTeam = async (req, res) => {
   try {
-    const workers = await HiredWorker.find({ 
-      contractorId: req.user.id, 
-      status: { $in: ['Active', 'ResignationPending', 'ResignationAccepted'] } 
-    }).populate('professionalId', 'name phone email jobRole yearsOfExperience locationPreference about isAvailable');
-    
-    // Map to array of User objects so frontend logic works seamlessly
-    const team = workers.filter(w => w.professionalId).map(w => {
-      const user = w.professionalId.toObject();
-      user.hiredWorkerId = w._id;
-      user.isServingNotice = ['ResignationPending', 'ResignationAccepted'].includes(w.status);
-      user.resignationReason = w.resignationReason;
-      user.noticeStartDate = w.resignationSubmittedDate;
-      user.noticeEndDate = w.lastWorkingDate;
-      user.isCrewHire = w.isCrewHire;
-      user.crewDetails = w.crewDetails;
-      user.crewSize = w.crewSize;
-      return user;
-    });
+    const team = await HiredWorker.find({
+      contractorId: req.user.id,
+      status: { $in: ['Active', 'ResignationPending', 'ResignationAccepted'] }
+    })
+    .populate('professionalId', 'name phone email')
+    .sort({ startDate: -1 });
 
-    res.json(team);
+    const formatted = team.map(t => ({
+      _id:           t._id,
+      hiredWorkerId: t._id,
+      professionalId: t.professionalId?._id || t.professionalId,
+      name:          t.professionalId?.name || 'Unknown',
+      phone:         t.professionalId?.phone || '',
+      email:         t.professionalId?.email || '',
+      jobRole:       t.jobRole,
+      hireSource:    t.hireSource || 'job_post',
+      salary:        t.salary,
+      salaryType:    t.salaryType,            // 'monthly' | 'project_based'
+      duration:      t.duration,
+      startDate:     t.startDate || t.joinedAt || new Date(),
+      status:        ['ResignationPending', 'ResignationAccepted'].includes(t.status) ? 'notice_period' : 'active',
+      noticePeriodEndsAt: t.lastWorkingDate,
+      isServingNotice: ['ResignationPending', 'ResignationAccepted'].includes(t.status),
+      resignationReason: t.resignationReason,
+      noticeStartDate: t.resignationSubmittedDate,
+      noticeEndDate: t.lastWorkingDate,
+      isCrewHire: t.isCrewHire,
+      crewDetails: t.crewDetails,
+      crewSize: t.crewSize
+    }));
+
+    // Group by jobRole for category-wise display (existing logic)
+    const grouped = formatted.reduce((acc, m) => {
+      const role = m.jobRole || 'Other';
+      if (!acc[role]) acc[role] = [];
+      acc[role].push(m);
+      return acc;
+    }, {});
+
+    res.json({
+      success: true,
+      data: { totalCount: formatted.length, teamMembers: formatted, grouped }
+    });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 

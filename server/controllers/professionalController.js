@@ -88,6 +88,8 @@ exports.getWorkingStatus = async (req, res) => {
         isWorking: true,
         isInNoticePeriod: false,
         hiredWorkerId: hiredWorker._id,
+        startDate: hiredWorker.startDate || hiredWorker.joinedAt || new Date(),
+        endDate: hiredWorker.endDate || null,
         currentJob: {
           jobRole: hiredWorker.jobRole,
           joinDate: hiredWorker.joinedAt || hiredWorker.joinDate
@@ -118,6 +120,8 @@ exports.getWorkingStatus = async (req, res) => {
         isWorking: true,
         isInNoticePeriod: true,
         hiredWorkerId: hiredWorker._id,
+        startDate: hiredWorker.startDate || hiredWorker.joinedAt || new Date(),
+        endDate: hiredWorker.endDate || null,
         daysRemaining,
         hoursRemaining,
         resignationStatus: hiredWorker.status,
@@ -870,13 +874,44 @@ exports.joinDirectHire = async (req, res) => {
     const crewDetails = post ? post.crewMembers : [];
     const crewSize = post ? post.crewSize : 1;
 
+    const { parseDurationToDays } = require('../utils/parseDuration');
+    const startDate = new Date();
+    const durationDays = parseDurationToDays(request.duration);
+    const endDate = durationDays
+      ? new Date(startDate.getTime() + durationDays * 24 * 60 * 60 * 1000)
+      : null;
+
+    const JobPost = require('../models/JobPost');
+    const linkedJob = request.jobPostId ? await JobPost.findById(request.jobPostId).session(session) : null;
+    const resolvedSalaryType = request.salaryType || (linkedJob ? (linkedJob.salaryType === 'contract' ? 'project_based' : 'monthly') : 'monthly');
+
+    let workSiteLocationCoords = null;
+    if (linkedJob && linkedJob.workSiteLocation && linkedJob.workSiteLocation.coordinates && linkedJob.workSiteLocation.coordinates.length === 2) {
+      workSiteLocationCoords = {
+        type: 'Point',
+        coordinates: linkedJob.workSiteLocation.coordinates
+      };
+    } else if (request.workSiteLocation) {
+      const { geocodeAddress } = require('../utils/geocoder');
+      const geocoded = await geocodeAddress(request.workSiteLocation);
+      if (geocoded && geocoded.coordinates && geocoded.coordinates.length === 2) {
+        workSiteLocationCoords = geocoded;
+      }
+    }
+
     const hiredWorker = new HiredWorker({
       contractorId: request.contractorId,
       professionalId,
       directHireRequestId: request._id,
+      hireSource: 'direct_hire',
       jobRole: request.jobRole,
       salary: request.salary ? parseFloat(request.salary.replace(/[^0-9.]/g, '')) : null,
+      salaryType: resolvedSalaryType,
+      duration: request.duration,
+      startDate,
+      endDate,
       workLocation: request.workSiteLocation,
+      workSiteLocationCoords,
       status: 'Active',
       noticePeriodDays: request.noticePeriodDays !== undefined ? request.noticePeriodDays : 7,
       isCrewHire,
@@ -1429,15 +1464,37 @@ exports.joinJob = async (req, res) => {
     const crewDetails = post ? post.crewMembers : [];
     const crewSize = post ? post.crewSize : 1;
 
+    const { parseDurationToDays } = require('../utils/parseDuration');
+    const startDate = new Date();
+    const durationDays = parseDurationToDays(jobPost.duration);
+    const endDate = durationDays
+      ? new Date(startDate.getTime() + durationDays * 24 * 60 * 60 * 1000)
+      : null;
+
+    const resolvedSalaryType = jobPost.salaryType === 'contract' ? 'project_based' : 'monthly';
+
+    let workSiteLocationCoords = null;
+    if (jobPost.workSiteLocation && jobPost.workSiteLocation.coordinates && jobPost.workSiteLocation.coordinates.length === 2) {
+      workSiteLocationCoords = {
+        type: 'Point',
+        coordinates: jobPost.workSiteLocation.coordinates
+      };
+    }
+
     const hiredWorker = new HiredWorker({
       contractorId: application.contractorId,
       professionalId,
       jobPostId: jobPost._id,
       applicationId: application._id,
+      hireSource: 'job_post',
       jobRole: jobPost.jobRole,
       salary: jobPost.salary,
-      salaryType: jobPost.salaryType,
+      salaryType: resolvedSalaryType,
+      duration: jobPost.duration,
+      startDate,
+      endDate,
       workLocation: jobPost.workLocation,
+      workSiteLocationCoords,
       status: 'Active',
       noticePeriodDays: jobPost.noticePeriodDays !== undefined ? jobPost.noticePeriodDays : 7,
       isCrewHire,

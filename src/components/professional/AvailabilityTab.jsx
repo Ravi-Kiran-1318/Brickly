@@ -188,18 +188,41 @@ const AvailabilityTab = ({ directHireRequests, setDirectHireRequests }) => {
   const handleCheckIn = async () => {
     if (!workingStatus.hiredWorkerId) return;
     setCheckingIn(true);
-    try {
-      const res = await api.post(`/api/professional/hired-worker/${workingStatus.hiredWorkerId}/check-in`);
-      if (res.data?.success) {
-        toast.success('Successfully checked in for today!');
-        setCheckedInToday(true);
-        setTodayAttendance(res.data.data);
-      } else {
-        toast.error(res.data?.message || 'Check-in failed');
+
+    const submitCheckIn = async (coords = {}) => {
+      try {
+        const res = await api.post(`/api/professional/hired-worker/${workingStatus.hiredWorkerId}/check-in`, coords);
+        if (res.data?.success) {
+          toast.success('Successfully checked in for today!');
+          setCheckedInToday(true);
+          setTodayAttendance(res.data.data);
+        } else {
+          toast.error(res.data?.message || 'Check-in failed');
+        }
+      } catch (err) {
+        toast.error(err.response?.data?.message || 'Check-in failed');
+      } finally {
+        setCheckingIn(false);
       }
-    } catch (err) {
-      toast.error(err.response?.data?.message || 'Check-in failed');
-    } finally {
+    };
+
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          submitCheckIn({
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude
+          });
+        },
+        (error) => {
+          console.error('Geolocation error:', error);
+          toast.error('Location access is required to check in. Please enable GPS permissions.');
+          setCheckingIn(false);
+        },
+        { enableHighAccuracy: true, timeout: 10000 }
+      );
+    } else {
+      toast.error('Geolocation is not supported by your browser.');
       setCheckingIn(false);
     }
   };
@@ -513,6 +536,9 @@ const AvailabilityTab = ({ directHireRequests, setDirectHireRequests }) => {
   const isOffline = !isVisible || availabilityStatus === 'Offline';
   const showEmptyState = hasNoAvailability && !workingStatus.isWorking && !workingStatus.isInNoticePeriod && isOffline;
 
+  const isEmploymentEnded = workingStatus.isWorking && workingStatus.endDate && new Date() > new Date(workingStatus.endDate);
+  const isEmploymentNotStarted = workingStatus.isWorking && workingStatus.startDate && new Date() < new Date(workingStatus.startDate);
+
   return (
     <div className="space-y-8">
       {/* Visibility Status Badge */}
@@ -673,43 +699,80 @@ const AvailabilityTab = ({ directHireRequests, setDirectHireRequests }) => {
         <motion.div 
           initial={{ opacity: 0, y: -20 }} 
           animate={{ opacity: 1, y: 0 }}
-          className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-sm flex items-center justify-between mt-6"
+          className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-sm mt-6"
         >
-          <div className="flex items-center gap-4">
-            <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 ${
-              checkedInToday 
-                ? 'bg-green-500/10 text-green-500' 
-                : 'bg-orange-500/10 text-orange-500'
-            }`}>
-              <IconCircleCheck size={24} />
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex items-start gap-4">
+              <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 ${
+                isEmploymentEnded
+                  ? 'bg-red-500/10 text-red-500'
+                  : checkedInToday 
+                    ? 'bg-green-500/10 text-green-500' 
+                    : 'bg-orange-500/10 text-orange-500'
+              }`}>
+                {isEmploymentEnded ? <IconAlertTriangle size={24} /> : <IconCircleCheck size={24} />}
+              </div>
+              <div>
+                <h3 className="font-black text-lg text-primary dark:text-white">Daily Check-In</h3>
+                <p className="text-sm font-semibold text-slate-500 dark:text-slate-400">
+                  {isEmploymentEnded
+                    ? 'Check-in period has expired.'
+                    : checkedInToday 
+                      ? `Checked in for today at ${todayAttendance?.checkInAt ? new Date(todayAttendance.checkInAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : ''}`
+                      : 'Mark your presence on the work site for today.'
+                  }
+                </p>
+                
+                {/* Employment Window */}
+                <div className="text-xs font-bold text-slate-500 dark:text-slate-400 mt-2 flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800/60 px-3 py-1 rounded-xl w-fit">
+                  <IconCalendarEvent size={14} className="text-slate-400" />
+                  <span>
+                    Employment Window: {new Date(workingStatus.startDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    {workingStatus.endDate 
+                      ? ` to ${new Date(workingStatus.endDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}`
+                      : ' (Ongoing)'}
+                  </span>
+                </div>
+              </div>
             </div>
-            <div>
-              <h3 className="font-black text-lg text-primary dark:text-white">Daily Check-In</h3>
-              <p className="text-sm font-semibold text-slate-500 dark:text-slate-400">
-                {checkedInToday 
-                  ? `Checked in for today at ${todayAttendance?.checkInAt ? new Date(todayAttendance.checkInAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : ''}`
-                  : 'Mark your presence on the work site for today.'
-                }
-              </p>
-            </div>
+
+            <button
+              onClick={handleCheckIn}
+              disabled={checkedInToday || checkingIn || isEmploymentEnded || isEmploymentNotStarted}
+              className={`px-6 py-3 font-black rounded-2xl transition-all shadow-md active:scale-95 flex items-center gap-2 self-start md:self-auto ${
+                checkedInToday || isEmploymentEnded || isEmploymentNotStarted
+                  ? 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 cursor-not-allowed shadow-none'
+                  : 'bg-orange-500 hover:bg-orange-600 text-white'
+              }`}
+            >
+              {checkingIn ? (
+                <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+              ) : isEmploymentEnded ? (
+                <>Period Ended</>
+              ) : isEmploymentNotStarted ? (
+                <>Not Started</>
+              ) : checkedInToday ? (
+                <>Checked In</>
+              ) : (
+                <>Mark I'm On Site</>
+              )}
+            </button>
           </div>
-          <button
-            onClick={handleCheckIn}
-            disabled={checkedInToday || checkingIn}
-            className={`px-6 py-3 font-black rounded-2xl transition-all shadow-md active:scale-95 flex items-center gap-2 ${
-              checkedInToday
-                ? 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 cursor-not-allowed shadow-none'
-                : 'bg-orange-500 hover:bg-orange-600 text-white'
-            }`}
-          >
-            {checkingIn ? (
-              <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
-            ) : checkedInToday ? (
-              <>Checked In</>
-            ) : (
-              <>Mark I'm On Site</>
-            )}
-          </button>
+
+          {/* Warning Banners */}
+          {isEmploymentEnded && (
+            <div className="mt-4 p-3.5 bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-400 text-sm font-bold rounded-2xl flex items-center gap-2">
+              <IconAlertTriangle size={18} className="shrink-0" />
+              <span>This employment period has ended. Daily check-in is no longer active.</span>
+            </div>
+          )}
+
+          {isEmploymentNotStarted && (
+            <div className="mt-4 p-3.5 bg-blue-500/10 border border-blue-500/20 text-blue-600 dark:text-blue-400 text-sm font-bold rounded-2xl flex items-center gap-2">
+              <IconAlertTriangle size={18} className="shrink-0" />
+              <span>This employment period has not started yet. You can check in starting from {new Date(workingStatus.startDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}.</span>
+            </div>
+          )}
         </motion.div>
       )}
 

@@ -62,7 +62,7 @@ const OverviewTab = ({ setActiveTab }) => {
       ]);
       setStats(statsRes.data);
       setInterests(interestsRes.data.slice(0, 5));
-      setTeam(teamRes.data);
+      setTeam(teamRes.data?.success ? teamRes.data.data.teamMembers : teamRes.data);
       setHasPortfolio(portfolioRes.data.length > 0);
       setPastTeam(pastTeamRes.data);
       setJobs(jobsRes.data.filter(j => !j.isFilled));
@@ -230,53 +230,79 @@ const OverviewTab = ({ setActiveTab }) => {
          </div>
          <div className="grid grid-cols-1 gap-6">
             {team.length > 0 ? team.map((member, i) => (
-              <div key={member._id || i} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 rounded-[32px] flex flex-col gap-4 hover:border-accent transition-all shadow-sm group">
-                 <div className="flex items-center gap-4">
+              <div key={member._id || i} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 rounded-[32px] hover:border-accent transition-all shadow-sm flex flex-col gap-4 group">
+                 <div className="flex items-center justify-between gap-4">
                    <div 
                      onClick={() => setAttendanceProfessional(member)}
                      className="flex items-center gap-4 flex-1 min-w-0 cursor-pointer hover:opacity-85 transition-opacity"
                      title="View Attendance Log"
                    >
-                     <div className="w-14 h-14 rounded-2xl bg-slate-50 dark:bg-slate-800 flex items-center justify-center font-black text-xl text-primary dark:text-white border border-slate-100 dark:border-slate-700 uppercase group-hover:scale-110 transition-transform">
-                        {(member.name || member.professionalId?.name)?.charAt(0) || 'P'}
+                     {/* Avatar */}
+                     <div className="w-14 h-14 rounded-2xl bg-slate-50 dark:bg-slate-800 flex items-center justify-center font-black text-xl text-primary dark:text-white border border-slate-100 dark:border-slate-700 uppercase shrink-0">
+                       {member.name?.charAt(0).toUpperCase()}
                      </div>
+
                      <div className="flex-1 min-w-0">
-                        <h4 className="font-black text-primary dark:text-white truncate">{member.name || member.professionalId?.name || 'Unknown'}</h4>
-                        <p className="text-[10px] font-black text-accent uppercase tracking-widest flex items-center gap-1.5 flex-wrap">
-                          {member.jobRole || member.professionalId?.jobRole || 'Professional'}
-                          {member.isCrewHire && (
-                            <span className="bg-blue-600 text-white text-[9px] font-black uppercase px-2 py-0.5 rounded-md flex items-center gap-0.5 shrink-0" title="Crew Hire Badge">
-                              👥 Crew of {member.crewSize || 1}
-                            </span>
-                          )}
-                        </p>
-                        <div className="flex items-center gap-3 mt-1">
-                           <div className="flex items-center gap-1">
-                              <span className={`w-2 h-2 rounded-full ${member.isServingNotice ? 'bg-orange-500 animate-pulse' : 'bg-green-500'}`} />
-                              <span className="text-[10px] font-bold text-slate-400 uppercase">{member.isServingNotice ? 'Serving Notice' : 'Active'}</span>
-                           </div>
-                           {(member.locationPreference || member.professionalId?.locationPreference) && (
-                             <span className="text-[10px] font-bold text-slate-400 truncate">• {member.locationPreference || member.professionalId?.locationPreference}</span>
-                           )}
-                        </div>
+                       {/* Name + status badge */}
+                       <div className="flex items-center gap-2 flex-wrap">
+                         <h4 className="font-black text-primary dark:text-white truncate text-base">
+                           {member.name}
+                         </h4>
+                         {member.status === 'notice_period' && (
+                           <span className="bg-orange-100 text-orange-700 dark:bg-orange-950/20 dark:text-orange-400 text-[10px] font-black uppercase px-2.5 py-0.5 rounded-md shrink-0">
+                             Notice Period
+                           </span>
+                         )}
+                       </div>
+
+                       {/* Job Role */}
+                       <div className="text-[10px] font-black text-accent uppercase tracking-widest mt-1">
+                         {member.jobRole}
+                       </div>
+
+                       {/* Salary */}
+                       <div className="text-xs font-bold text-slate-600 dark:text-slate-300 mt-1">
+                         ₹{member.salary?.toLocaleString('en-IN')}
+                         {member.salaryType === 'monthly' ? ' / month' : ' (project-based)'}
+                       </div>
+
+                       {/* Duration */}
+                       {member.duration && (
+                         <div className="text-xs text-slate-400 font-semibold mt-0.5">
+                           Duration: {member.duration}
+                         </div>
+                       )}
+
+                       {/* Start date */}
+                       <div className="text-xs text-slate-400 font-semibold mt-0.5">
+                         Joined {new Date(member.startDate).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' })}
+                         {' · '}
+                         {member.hireSource === 'job_post' ? 'Hired via Job Post' : 'Direct Hire'}
+                       </div>
+
+                       {/* Contact */}
+                       <div className="text-[10px] font-black text-slate-400 uppercase tracking-wider mt-1.5">
+                         {member.phone} · {member.email}
+                       </div>
                      </div>
                    </div>
-                    <div className="flex gap-2 shrink-0">
-                      <button
-                         onClick={() => setReviewProfessional(member)}
-                         className="w-10 h-10 rounded-xl bg-orange-50 dark:bg-orange-900/20 text-orange-500 flex items-center justify-center hover:bg-orange-100 hover:scale-110 transition-all"
-                         title="Leave a Review"
-                      >
-                         <IconStar size={20} />
-                      </button>
-                      <button
-                         onClick={() => setDisputeHiredWorkerId(member.hiredWorkerId || member._id)}
-                         className="w-10 h-10 rounded-xl bg-red-50 dark:bg-red-900/20 text-red-500 flex items-center justify-center hover:bg-red-100 hover:scale-110 transition-all"
-                         title="File a Dispute"
-                      >
-                         <IconAlertTriangle size={20} />
-                      </button>
-                    </div>
+
+                   <div className="flex gap-2 shrink-0">
+                     <button
+                        onClick={() => setReviewProfessional(member)}
+                        className="w-10 h-10 rounded-xl bg-orange-50 dark:bg-orange-900/20 text-orange-500 flex items-center justify-center hover:bg-orange-100 hover:scale-110 transition-all"
+                        title="Leave a Review"
+                     >
+                        <IconStar size={20} />
+                     </button>
+                     <button
+                        onClick={() => setDisputeHiredWorkerId(member.hiredWorkerId || member._id)}
+                        className="w-10 h-10 rounded-xl bg-red-50 dark:bg-red-900/20 text-red-500 flex items-center justify-center hover:bg-red-100 hover:scale-110 transition-all"
+                        title="File a Dispute"
+                     >
+                        <IconAlertTriangle size={20} />
+                     </button>
+                   </div>
                  </div>
 
                  {member.isServingNotice && (

@@ -295,6 +295,12 @@ const ApplicationsTab = ({ openMapJobId, setOpenMapJobId }) => {
         hiredWorkerId={reviewModalData?.hiredWorkerId}
         onSuccess={fetchApplications}
       />
+      <FileDisputeModal
+        isOpen={!!disputeHiredWorkerId}
+        onClose={() => setDisputeHiredWorkerId(null)}
+        hiredWorkerId={disputeHiredWorkerId}
+        onSuccess={() => {}}
+      />
     </div>
   );
 };
@@ -619,12 +625,6 @@ const ApplicationCard = ({ application, user, openMapJobId, setOpenMapJobId, onJ
           </motion.div>
         )}
       </AnimatePresence>
-      <FileDisputeModal
-        isOpen={!!disputeHiredWorkerId}
-        onClose={() => setDisputeHiredWorkerId(null)}
-        hiredWorkerId={disputeHiredWorkerId}
-        onSuccess={() => {}}
-      />
     </motion.div>
   );
 };

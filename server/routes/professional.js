@@ -235,7 +235,59 @@ router.post('/hired-worker/:id/check-in', async (req, res) => {
       return res.status(404).json({ success: false, message: 'Active employment record not found.' });
     }
 
-    const todayStr = new Date().toISOString().split('T')[0];
+    const now = new Date();
+
+    if (now < record.startDate) {
+      return res.status(400).json({
+        success: false,
+        message: 'Employment has not started yet.'
+      });
+    }
+    if (record.endDate && now > record.endDate) {
+      return res.status(400).json({
+        success: false,
+        message: 'This employment period has ended. Check-in is no longer available.'
+      });
+    }
+
+    // Geofencing Check
+    const { latitude, longitude } = req.body;
+    if (record.workSiteLocationCoords && record.workSiteLocationCoords.coordinates && record.workSiteLocationCoords.coordinates.length === 2) {
+      if (latitude === undefined || longitude === undefined) {
+        return res.status(400).json({
+          success: false,
+          message: 'Location access is required for check-in at this job site. Please enable GPS.'
+        });
+      }
+
+      const getDistanceInMeters = (lat1, lon1, lat2, lon2) => {
+        const R = 6371e3; // Earth radius in meters
+        const phi1 = (lat1 * Math.PI) / 180;
+        const phi2 = (lat2 * Math.PI) / 180;
+        const deltaPhi = ((lat2 - lat1) * Math.PI) / 180;
+        const deltaLambda = ((lon2 - lon1) * Math.PI) / 180;
+
+        const a =
+          Math.sin(deltaPhi / 2) * Math.sin(deltaPhi / 2) +
+          Math.cos(phi1) * Math.cos(phi2) * Math.sin(deltaLambda / 2) * Math.sin(deltaLambda / 2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+        return R * c;
+      };
+
+      const [siteLon, siteLat] = record.workSiteLocationCoords.coordinates;
+      const distance = getDistanceInMeters(latitude, longitude, siteLat, siteLon);
+      const allowedRadius = 500; // 500 meters
+
+      if (distance > allowedRadius) {
+        return res.status(400).json({
+          success: false,
+          message: `You are too far from the job site to check in. (Distance: ${Math.round(distance)}m, Allowed: ${allowedRadius}m)`
+        });
+      }
+    }
+
+    const todayStr = now.toISOString().split('T')[0];
 
     // Check if already checked in today
     const existing = await Attendance.findOne({
@@ -252,7 +304,7 @@ router.post('/hired-worker/:id/check-in', async (req, res) => {
       contractorId: record.contractorId,
       professionalId: req.user.id,
       date: todayStr,
-      checkInAt: new Date(),
+      checkInAt: now,
       status: 'present'
     });
 

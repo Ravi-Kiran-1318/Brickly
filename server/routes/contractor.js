@@ -171,6 +171,59 @@ router.get('/interests', contractorController.getInterests);
 // Attendance Log Route
 const Attendance = require('../models/Attendance');
 
+router.get('/attendance-overview', async (req, res) => {
+  try {
+    const team = await HiredWorker.find({
+      contractorId: req.user.id,
+      status: { $in: ['Active', 'ResignationPending', 'ResignationAccepted', 'Completed'] }
+    }).populate('professionalId', 'name phone');
+
+    const overview = await Promise.all(team.map(async (member) => {
+      const start = member.startDate || member.joinedAt || new Date();
+      const end = member.endDate || null;
+
+      let totalExpectedDays = 0;
+      const sDate = new Date(start);
+      sDate.setHours(0, 0, 0, 0);
+
+      if (end) {
+        const minDate = new Date() < new Date(end) ? new Date() : new Date(end);
+        const mDate = new Date(minDate);
+        mDate.setHours(0, 0, 0, 0);
+        totalExpectedDays = Math.round((mDate - sDate) / (1000 * 60 * 60 * 24)) + 1;
+      } else {
+        const mDate = new Date();
+        mDate.setHours(0, 0, 0, 0);
+        totalExpectedDays = Math.round((mDate - sDate) / (1000 * 60 * 60 * 24)) + 1;
+      }
+
+      const presentCount = await Attendance.countDocuments({
+        hiredWorkerId: member._id,
+        status: 'present'
+      });
+
+      return {
+        hiredWorkerId:  member._id,
+        name:           member.professionalId?.name || 'Unknown',
+        jobRole:        member.jobRole,
+        startDate:      start,
+        endDate:        end,
+        duration:       member.duration,
+        totalExpectedDays: Math.max(totalExpectedDays, 0),
+        presentDays:    presentCount,
+        attendanceRate: totalExpectedDays > 0
+          ? Math.round((presentCount / totalExpectedDays) * 100)
+          : 0,
+        status: ['ResignationPending', 'ResignationAccepted'].includes(member.status) ? 'notice_period' : (member.status === 'Completed' ? 'completed' : 'active'),
+      };
+    }));
+
+    res.json({ success: true, data: overview });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 router.get('/hired-worker/:id/attendance-log', async (req, res) => {
   try {
     const record = await HiredWorker.findOne({
