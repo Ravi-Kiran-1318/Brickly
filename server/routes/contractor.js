@@ -182,19 +182,51 @@ router.get('/attendance-overview', async (req, res) => {
       const start = member.startDate || member.joinedAt || new Date();
       const end = member.endDate || null;
 
+      const countExpectedDaysExcludingSundays = (startDate, endDate) => {
+        let count = 0;
+        const curDate = new Date(startDate.getTime());
+        curDate.setHours(0, 0, 0, 0);
+        const limitDate = new Date(endDate.getTime());
+        limitDate.setHours(0, 0, 0, 0);
+
+        while (curDate <= limitDate) {
+          if (curDate.getDay() !== 0) { // 0 is Sunday
+            count++;
+          }
+          curDate.setDate(curDate.getDate() + 1);
+        }
+        return count;
+      };
+
+      const countExpectedDaysIncludingSundays = (startDate, endDate) => {
+        let count = 0;
+        const curDate = new Date(startDate.getTime());
+        curDate.setHours(0, 0, 0, 0);
+        const limitDate = new Date(endDate.getTime());
+        limitDate.setHours(0, 0, 0, 0);
+
+        while (curDate <= limitDate) {
+          count++;
+          curDate.setDate(curDate.getDate() + 1);
+        }
+        return count;
+      };
+
       let totalExpectedDays = 0;
       const sDate = new Date(start);
       sDate.setHours(0, 0, 0, 0);
 
-      if (end) {
-        const minDate = new Date() < new Date(end) ? new Date() : new Date(end);
-        const mDate = new Date(minDate);
-        mDate.setHours(0, 0, 0, 0);
-        totalExpectedDays = Math.round((mDate - sDate) / (1000 * 60 * 60 * 24)) + 1;
-      } else {
-        const mDate = new Date();
-        mDate.setHours(0, 0, 0, 0);
-        totalExpectedDays = Math.round((mDate - sDate) / (1000 * 60 * 60 * 24)) + 1;
+      const minDate = end 
+        ? (new Date() < new Date(end) ? new Date() : new Date(end))
+        : new Date();
+      minDate.setHours(0, 0, 0, 0);
+
+      if (minDate >= sDate) {
+        if (member.includeSundays) {
+          totalExpectedDays = countExpectedDaysIncludingSundays(sDate, minDate);
+        } else {
+          totalExpectedDays = countExpectedDaysExcludingSundays(sDate, minDate);
+        }
       }
 
       const presentCount = await Attendance.countDocuments({
@@ -209,6 +241,7 @@ router.get('/attendance-overview', async (req, res) => {
         startDate:      start,
         endDate:        end,
         duration:       member.duration,
+        includeSundays: member.includeSundays || false,
         totalExpectedDays: Math.max(totalExpectedDays, 0),
         presentDays:    presentCount,
         attendanceRate: totalExpectedDays > 0

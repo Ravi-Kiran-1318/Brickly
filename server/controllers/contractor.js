@@ -18,19 +18,43 @@ exports.getProfile = async (req, res) => {
 };
 
 exports.updateProfile = async (req, res) => {
-  const updates = req.body;
-  // Prevent role or email update via this route for security
-  delete updates.role;
-  delete updates.email;
-  delete updates.password;
+  try {
+    const updates = req.body;
+    // Prevent role or email update via this route for security
+    delete updates.role;
+    delete updates.email;
+    delete updates.password;
 
-  const user = await User.findByIdAndUpdate(
-    req.user.id,
-    { $set: updates },
-    { returnDocument: 'after', runValidators: true }
-  ).select('-password');
+    if (updates.location) {
+      const { type, coordinates } = updates.location;
+      if (type !== 'Point') {
+        return res.status(400).json({ message: "Invalid location type. Must be 'Point'." });
+      }
+      if (!Array.isArray(coordinates) || coordinates.length !== 2) {
+        return res.status(400).json({ message: "Coordinates must be an array of [longitude, latitude]." });
+      }
+      const [lng, lat] = coordinates;
+      if (typeof lng !== 'number' || isNaN(lng) || typeof lat !== 'number' || isNaN(lat)) {
+        return res.status(400).json({ message: "Coordinates must be valid numbers." });
+      }
+      if (lng < -180 || lng > 180) {
+        return res.status(400).json({ message: "Longitude must be between -180 and 180 degrees." });
+      }
+      if (lat < -90 || lat > 90) {
+        return res.status(400).json({ message: "Latitude must be between -90 and 90 degrees." });
+      }
+    }
 
-  res.json(user);
+    const user = await User.findByIdAndUpdate(
+      req.user.id,
+      { $set: updates },
+      { returnDocument: 'after', runValidators: true }
+    ).select('-password');
+
+    res.json(user);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
 };
 
 exports.getStats = async (req, res) => {

@@ -102,6 +102,9 @@ const AttendanceLogModal = ({ isOpen, onClose, member }) => {
                   <p className="text-xs font-semibold text-slate-400 dark:text-slate-500">
                     {member.name || member.professionalId?.name} • {member.jobRole}
                   </p>
+                  <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 mt-1 uppercase tracking-wider">
+                    Duration: {new Date(member.startDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })} to {member.endDate ? new Date(member.endDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Ongoing'}
+                  </p>
                 </div>
               </div>
               <button onClick={onClose} className="p-2 bg-slate-50 dark:bg-slate-800 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-white transition-colors">
@@ -186,7 +189,11 @@ const AttendanceLogModal = ({ isOpen, onClose, member }) => {
                     
                     const isWithinContract = currentDateObj >= start && (!end || currentDateObj <= end);
                     const isPastOrToday = currentDateObj <= today;
-                    const isWorkDay = isWithinContract && isPastOrToday;
+                    const isSunday = currentDateObj.getDay() === 0;
+                    const isSundayHoliday = isSunday && !member.includeSundays;
+                    
+                    // Sundays are holidays unless Sunday work is included
+                    const isWorkDay = isWithinContract && isPastOrToday && (!isSunday || member.includeSundays);
                     const isAbsent = isWorkDay && !isPresent;
                     
                     let cellClass = '';
@@ -197,6 +204,10 @@ const AttendanceLogModal = ({ isOpen, onClose, member }) => {
                       tooltip = record.checkInAt 
                         ? `Checked in: ${new Date(record.checkInAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}`
                         : 'Present';
+                    } else if (isSundayHoliday && isWithinContract) {
+                      // Sunday Holiday within active contract
+                      cellClass = 'bg-sky-100 dark:bg-sky-950/40 border border-sky-200 dark:border-sky-800 text-sky-650 dark:text-sky-400 font-bold';
+                      tooltip = 'Sunday (Holiday)';
                     } else {
                       const isToday = currentDateObj.getTime() === today.getTime();
                       if (isToday && isWithinContract) {
@@ -247,9 +258,19 @@ const AttendanceLogModal = ({ isOpen, onClose, member }) => {
                 <span>Pending Today</span>
               </div>
               <div className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 bg-sky-100 dark:bg-sky-950 border border-sky-200 dark:border-sky-800 rounded-md"></span>
+                <span>Sunday (Holiday) *</span>
+              </div>
+              <div className="flex items-center gap-1.5">
                 <span className="w-2.5 h-2.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-md"></span>
                 <span>Scheduled</span>
               </div>
+            </div>
+
+            <div className="text-[9px] text-center text-slate-450 dark:text-slate-500 font-bold mt-2 uppercase tracking-wide">
+              {member.includeSundays 
+                ? "* Sunday shifts are included for this worker"
+                : "* Sunday is excluded from expected workdays & attendance rates"}
             </div>
 
             <div className="mt-6">

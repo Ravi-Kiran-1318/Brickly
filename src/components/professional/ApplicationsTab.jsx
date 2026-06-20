@@ -37,7 +37,8 @@ const STATUS_COLORS = {
   'Withdrawn': 'bg-slate-100 text-slate-500 border-slate-200',
   'Position Filled': 'bg-amber-100 text-amber-600 border-amber-200',
   'Job Deleted': 'bg-red-100 text-red-600 border-red-200',
-  'Position Cancelled': 'bg-red-100 text-red-600 border-red-200'
+  'Position Cancelled': 'bg-red-100 text-red-600 border-red-200',
+  'Expired': 'bg-slate-100 text-slate-500 border-slate-200'
 };
 
 const LoadingSkeleton = () => (
@@ -313,6 +314,21 @@ const ApplicationCard = ({ application, user, openMapJobId, setOpenMapJobId, onJ
     ? 'Position Filled' 
     : application.status;
 
+  const daysLeft = (() => {
+    if (job?.startDate) {
+      const today = new Date();
+      today.setHours(0,0,0,0);
+      const start = new Date(job.startDate);
+      start.setHours(0,0,0,0);
+      const diffMs = start.getTime() - today.getTime();
+      return Math.round(diffMs / (1000 * 60 * 60 * 24));
+    }
+    return null;
+  })();
+
+  const isExpired = displayStatus === 'Hired' && daysLeft !== null && daysLeft < 0;
+  const displayStatusVal = isExpired ? 'Expired' : displayStatus;
+
   const [isRejecting, setIsRejecting] = useState(false);
   const [rejectionReason, setRejectionReason] = useState('');
   const [rejectLoading, setRejectLoading] = useState(false);
@@ -348,10 +364,20 @@ const ApplicationCard = ({ application, user, openMapJobId, setOpenMapJobId, onJ
           <div>
              <div className="flex flex-wrap items-center gap-2 mb-1">
                 <h3 className="text-xl font-black text-primary dark:text-white tracking-tight">{job.jobRole}</h3>
-                <span className={`text-[10px] font-black uppercase px-2.5 py-1 rounded-lg border ${STATUS_COLORS[displayStatus] || 'bg-slate-100'}`}>
-                  {displayStatus}
+                <span className={`text-[10px] font-black uppercase px-2.5 py-1 rounded-lg border ${STATUS_COLORS[displayStatusVal] || 'bg-slate-100'}`}>
+                  {displayStatusVal}
                 </span>
-                {(displayStatus === 'Hired' || displayStatus === 'Joined') && distanceText && (
+                {displayStatusVal === 'Hired' && daysLeft !== null && (
+                  <span className={`text-[10px] font-black px-2.5 py-1 rounded-lg border flex items-center gap-1 ${
+                    daysLeft === 0 
+                      ? 'bg-amber-100 text-amber-700 border-amber-200 animate-pulse' 
+                      : 'bg-indigo-100 text-indigo-700 border-indigo-200'
+                  }`}>
+                    <IconClock size={12} />
+                    {daysLeft === 0 ? 'Starts today!' : `Join within ${daysLeft} ${daysLeft === 1 ? 'day' : 'days'}`}
+                  </span>
+                )}
+                {(displayStatusVal === 'Hired' || displayStatusVal === 'Joined') && distanceText && (
                   <span className="text-[10px] font-black text-green-700 bg-green-100 border border-green-200 px-2 py-1 rounded-md flex items-center gap-1">
                     <IconMapPin size={12} /> {distanceText} km away
                   </span>
@@ -414,7 +440,7 @@ const ApplicationCard = ({ application, user, openMapJobId, setOpenMapJobId, onJ
                 <IconMapRoute size={16} /> {isMapOpen ? 'Hide Route' : 'View Route'}
               </button>
             )}
-             {displayStatus === 'Hired' && (
+             {displayStatusVal === 'Hired' && (
               <>
                 <button 
                   onClick={onJoinClick}
@@ -428,25 +454,10 @@ const ApplicationCard = ({ application, user, openMapJobId, setOpenMapJobId, onJ
                 >
                   <IconX size={16} /> Reject
                 </button>
-                {user?.isServingNotice ? (
-                  <button 
-                    disabled
-                    className="flex items-center gap-2 text-xs font-black px-6 py-2.5 rounded-xl bg-slate-100 text-slate-400 cursor-not-allowed"
-                  >
-                    <IconClock size={16} /> Notice Period Active
-                  </button>
-                ) : (
-                  <button 
-                    onClick={() => setIsResignModalOpen(true)}
-                    className="flex items-center gap-2 text-xs font-black px-6 py-2.5 rounded-xl border border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300 transition-all"
-                  >
-                    <IconDoorExit size={16} /> Resign from this Job
-                  </button>
-                )}
               </>
             )}
 
-            {displayStatus === 'Joined' && !user?.isServingNotice && (
+            {displayStatusVal === 'Joined' && !user?.isServingNotice && (
               <button 
                 onClick={() => setIsResignModalOpen(true)}
                 className="flex items-center gap-2 text-xs font-black px-6 py-2.5 rounded-xl bg-slate-100 text-slate-600 hover:bg-red-100 hover:text-red-600 transition-all"
@@ -476,23 +487,24 @@ const ApplicationCard = ({ application, user, openMapJobId, setOpenMapJobId, onJ
          
          <div className="flex items-center gap-3 shrink-0">
             <div className="px-4 py-2 bg-slate-50 dark:bg-slate-800 rounded-xl flex items-center justify-center min-w-[100px] gap-2">
-                {displayStatus === 'Applied' && <IconClock size={16} className="text-slate-400" />}
-                {displayStatus === 'Viewed' && <IconEye size={16} className="text-purple-500" />}
-                {displayStatus === 'Shortlisted' && <IconCircleCheck size={16} className="text-orange-500 animate-bounce" />}
-                {displayStatus === 'Hired' && <IconCircleCheck size={16} className="text-green-500" />}
-                {displayStatus === 'Joined' && <IconCircleCheck size={16} className="text-emerald-600" />}
-                {displayStatus === 'Rejected' && <IconX size={16} className="text-red-500" />}
-                {displayStatus === 'Withdrawn' && <IconHandStop size={16} className="text-slate-400" />}
-                {displayStatus === 'Position Filled' && <IconAlertCircle size={16} className="text-amber-500" />}
-                {displayStatus === 'Job Deleted' && <IconX size={16} className="text-red-500" />}
-                {displayStatus === 'Position Cancelled' && <IconX size={16} className="text-red-500" />}
-                <span className="text-[10px] font-black uppercase text-slate-400">{displayStatus}</span>
+                {displayStatusVal === 'Applied' && <IconClock size={16} className="text-slate-400" />}
+                {displayStatusVal === 'Viewed' && <IconEye size={16} className="text-purple-500" />}
+                {displayStatusVal === 'Shortlisted' && <IconCircleCheck size={16} className="text-orange-500 animate-bounce" />}
+                {displayStatusVal === 'Hired' && <IconCircleCheck size={16} className="text-green-500" />}
+                {displayStatusVal === 'Joined' && <IconCircleCheck size={16} className="text-emerald-600" />}
+                {displayStatusVal === 'Rejected' && <IconX size={16} className="text-red-500" />}
+                {displayStatusVal === 'Withdrawn' && <IconHandStop size={16} className="text-slate-400" />}
+                {displayStatusVal === 'Position Filled' && <IconAlertCircle size={16} className="text-amber-500" />}
+                {displayStatusVal === 'Job Deleted' && <IconX size={16} className="text-red-500" />}
+                {displayStatusVal === 'Position Cancelled' && <IconX size={16} className="text-red-500" />}
+                {displayStatusVal === 'Expired' && <IconX size={16} className="text-slate-400" />}
+                <span className="text-[10px] font-black uppercase text-slate-400">{displayStatusVal}</span>
             </div>
          </div>
       </div>
 
       <AnimatePresence>
-        {isRejecting && displayStatus === 'Hired' && (
+        {isRejecting && displayStatusVal === 'Hired' && (
           <motion.div 
             initial={{ height: 0, opacity: 0 }} 
             animate={{ height: 'auto', opacity: 1 }} 

@@ -16,7 +16,8 @@ const directHireRequestSchema = new mongoose.Schema({
   rejectionReason: { type: String, default: '' },
   attemptNumber: { type: Number, default: 1 },
   rejectedAt: { type: Date },
-  noticePeriodDays: { type: Number, default: 7, min: 0, max: 30 }
+  noticePeriodDays: { type: Number, default: 7, min: 0, max: 30 },
+  includeSundays: { type: Boolean, default: false }
 }, {
   timestamps: true
 });

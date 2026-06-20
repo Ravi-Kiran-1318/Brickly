@@ -27,6 +27,7 @@ const jobPostSchema = new mongoose.Schema({
     coordinates: { type: [Number], index: '2dsphere' } // [longitude, latitude]
   },
   noticePeriodDays: { type: Number, default: 7, min: 0, max: 30 },
+  includeSundays: { type: Boolean, default: false },
   createdAt: { type: Date, default: Date.now }
 });
 

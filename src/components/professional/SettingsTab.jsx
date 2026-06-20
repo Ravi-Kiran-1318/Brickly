@@ -69,13 +69,29 @@ const SettingsTab = () => {
   };
 
   const handleUpdateLocation = async () => {
-    if (!lat || !lng) return toast.error('Please enter both latitude and longitude');
+    const trimmedLat = String(lat).trim();
+    const trimmedLng = String(lng).trim();
+    if (!trimmedLat || !trimmedLng) {
+      return toast.error('Please enter both latitude and longitude');
+    }
+    const latitude = parseFloat(trimmedLat);
+    const longitude = parseFloat(trimmedLng);
+    if (isNaN(latitude) || isNaN(longitude)) {
+      return toast.error('Latitude and Longitude must be valid numbers');
+    }
+    if (longitude < -180 || longitude > 180) {
+      return toast.error('Longitude must be between -180 and 180 degrees');
+    }
+    if (latitude < -90 || latitude > 90) {
+      return toast.error('Latitude must be between -90 and 90 degrees');
+    }
+
     setLocLoading(true);
     try {
       const locationData = {
         location: {
           type: 'Point',
-          coordinates: [parseFloat(lng), parseFloat(lat)]
+          coordinates: [longitude, latitude]
         }
       };
       await api.put('/api/professional/profile', locationData);
@@ -85,7 +101,8 @@ const SettingsTab = () => {
       toast.success('Location updated successfully!');
     } catch (err) {
       console.error(err);
-      toast.error('Failed to update location');
+      const errMsg = err.response?.data?.message || 'Failed to update location';
+      toast.error(errMsg);
     } finally {
       setLocLoading(false);
     }

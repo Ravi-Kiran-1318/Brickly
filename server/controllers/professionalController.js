@@ -30,6 +30,26 @@ exports.updateProfile = async (req, res) => {
     delete updates.email;
     delete updates.password;
 
+    if (updates.location) {
+      const { type, coordinates } = updates.location;
+      if (type !== 'Point') {
+        return res.status(400).json({ message: "Invalid location type. Must be 'Point'." });
+      }
+      if (!Array.isArray(coordinates) || coordinates.length !== 2) {
+        return res.status(400).json({ message: "Coordinates must be an array of [longitude, latitude]." });
+      }
+      const [lng, lat] = coordinates;
+      if (typeof lng !== 'number' || isNaN(lng) || typeof lat !== 'number' || isNaN(lat)) {
+        return res.status(400).json({ message: "Coordinates must be valid numbers." });
+      }
+      if (lng < -180 || lng > 180) {
+        return res.status(400).json({ message: "Longitude must be between -180 and 180 degrees." });
+      }
+      if (lat < -90 || lat > 90) {
+        return res.status(400).json({ message: "Latitude must be between -90 and 90 degrees." });
+      }
+    }
+
     const user = await User.findByIdAndUpdate(
       req.user.id,
       { $set: updates },
@@ -508,6 +528,16 @@ exports.getMyApplications = async (req, res) => {
       .sort({ appliedAt: -1 });
 
     const formatted = await Promise.all(applications.map(async (app) => {
+      // Lazy offer expiry check
+      if (app.status === 'Hired' && app.jobPostId && app.jobPostId.startDate) {
+        const jobStart = new Date(app.jobPostId.startDate);
+        jobStart.setHours(23, 59, 59, 999);
+        if (new Date() > jobStart) {
+          app.status = 'Expired';
+          await app.save();
+        }
+      }
+
       // Find matching HiredWorker
       const hw = await HiredWorker.findOne({ applicationId: app._id });
       let hiredWorkerId = null;
@@ -706,7 +736,7 @@ exports.getAllAvailability = async (req, res) => {
 
 exports.directHireRequest = async (req, res) => {
   try {
-    const { jobRole, workSiteLocation, salary, duration, jobPostId, noticePeriodDays } = req.body;
+    const { jobRole, workSiteLocation, salary, duration, jobPostId, noticePeriodDays, includeSundays } = req.body;
     const { professionalId } = req.params;
     
     const contractor = await User.findById(req.user.id);
@@ -763,7 +793,8 @@ exports.directHireRequest = async (req, res) => {
       salary,
       duration,
       attemptNumber,
-      noticePeriodDays: noticePeriodDays !== undefined ? Number(noticePeriodDays) : 7
+      noticePeriodDays: noticePeriodDays !== undefined ? Number(noticePeriodDays) : 7,
+      includeSundays: includeSundays === true || includeSundays === 'true'
     });
     await request.save();
 
@@ -874,15 +905,19 @@ exports.joinDirectHire = async (req, res) => {
     const crewDetails = post ? post.crewMembers : [];
     const crewSize = post ? post.crewSize : 1;
 
+    const JobPost = require('../models/JobPost');
+    const linkedJob = request.jobPostId ? await JobPost.findById(request.jobPostId).session(session) : null;
+
     const { parseDurationToDays } = require('../utils/parseDuration');
-    const startDate = new Date();
+    const now = new Date();
+    const startDate = (linkedJob && linkedJob.startDate && new Date(linkedJob.startDate) > now)
+      ? new Date(linkedJob.startDate)
+      : now;
     const durationDays = parseDurationToDays(request.duration);
     const endDate = durationDays
       ? new Date(startDate.getTime() + durationDays * 24 * 60 * 60 * 1000)
       : null;
 
-    const JobPost = require('../models/JobPost');
-    const linkedJob = request.jobPostId ? await JobPost.findById(request.jobPostId).session(session) : null;
     const resolvedSalaryType = request.salaryType || (linkedJob ? (linkedJob.salaryType === 'contract' ? 'project_based' : 'monthly') : 'monthly');
 
     let workSiteLocationCoords = null;
@@ -916,7 +951,8 @@ exports.joinDirectHire = async (req, res) => {
       noticePeriodDays: request.noticePeriodDays !== undefined ? request.noticePeriodDays : 7,
       isCrewHire,
       crewDetails,
-      crewSize
+      crewSize,
+      includeSundays: request.includeSundays || false
     });
     await hiredWorker.save({ session });
 
@@ -1432,6 +1468,18 @@ exports.joinJob = async (req, res) => {
       return res.status(404).json({ message: 'Job post not found' });
     }
 
+    if (jobPost.startDate) {
+      const jobStart = new Date(jobPost.startDate);
+      jobStart.setHours(23, 59, 59, 999);
+      if (new Date() > jobStart) {
+        application.status = 'Expired';
+        await application.save({ session });
+        await session.abortTransaction();
+        session.endSession();
+        return res.status(400).json({ message: 'This job offer has expired as the start date has passed.' });
+      }
+    }
+
     const io = getIO();
 
     // 3. Update this application to 'Joined'
@@ -1465,7 +1513,10 @@ exports.joinJob = async (req, res) => {
     const crewSize = post ? post.crewSize : 1;
 
     const { parseDurationToDays } = require('../utils/parseDuration');
-    const startDate = new Date();
+    const now = new Date();
+    const startDate = (jobPost.startDate && new Date(jobPost.startDate) > now)
+      ? new Date(jobPost.startDate)
+      : now;
     const durationDays = parseDurationToDays(jobPost.duration);
     const endDate = durationDays
       ? new Date(startDate.getTime() + durationDays * 24 * 60 * 60 * 1000)
@@ -1499,7 +1550,8 @@ exports.joinJob = async (req, res) => {
       noticePeriodDays: jobPost.noticePeriodDays !== undefined ? jobPost.noticePeriodDays : 7,
       isCrewHire,
       crewDetails,
-      crewSize
+      crewSize,
+      includeSundays: jobPost.includeSundays || false
     });
     await hiredWorker.save({ session });
 

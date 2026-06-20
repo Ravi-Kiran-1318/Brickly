@@ -10,6 +10,14 @@ const NOTIFICATION_TABS = require('../../shared/notificationConstants');
 
 exports.createJob = async (req, res) => {
   try {
+    const includeSundays = req.body.includeSundays === true || req.body.includeSundays === 'true';
+    if (req.body.startDate && !includeSundays) {
+      const startDateVal = new Date(req.body.startDate);
+      if (!isNaN(startDateVal.getTime()) && startDateVal.getDay() === 0) {
+        return res.status(400).json({ message: 'Job cannot start on a Sunday unless Sunday work is enabled.' });
+      }
+    }
+
     let workSiteLocation = null;
     if (req.body.workLocation) {
       workSiteLocation = await geocodeAddress(req.body.workLocation);

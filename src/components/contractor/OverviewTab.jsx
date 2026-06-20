@@ -46,7 +46,8 @@ const OverviewTab = ({ setActiveTab }) => {
     workSiteLocation: '',
     salary: '',
     duration: 'Long term',
-    jobPostId: ''
+    jobPostId: '',
+    includeSundays: false
   });
   const [hireAgainLoading, setHireAgainLoading] = useState(false);
 
@@ -100,7 +101,8 @@ const OverviewTab = ({ setActiveTab }) => {
       workSiteLocation: member.workLocation || '',
       salary: member.salary ? String(member.salary) : '',
       duration: 'Long term',
-      jobPostId: ''
+      jobPostId: '',
+      includeSundays: false
     });
   };
 
@@ -117,7 +119,8 @@ const OverviewTab = ({ setActiveTab }) => {
         workSiteLocation: hireAgainData.workSiteLocation,
         salary: Number(hireAgainData.salary),
         duration: hireAgainData.duration,
-        jobPostId: hireAgainData.jobPostId || null
+        jobPostId: hireAgainData.jobPostId || null,
+        includeSundays: hireAgainData.includeSundays
       });
       toast.success('Direct hire request sent successfully!');
       setHireAgainMember(null);
@@ -448,7 +451,15 @@ const OverviewTab = ({ setActiveTab }) => {
                   <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Link to Job Post (Optional)</label>
                   <select 
                     value={hireAgainData.jobPostId}
-                    onChange={e => setHireAgainData({ ...hireAgainData, jobPostId: e.target.value })}
+                    onChange={e => {
+                      const jobId = e.target.value;
+                      const selectedJob = jobs.find(j => j._id === jobId);
+                      setHireAgainData({
+                        ...hireAgainData,
+                        jobPostId: jobId,
+                        includeSundays: selectedJob ? (selectedJob.includeSundays || false) : false
+                      });
+                    }}
                     className="w-full p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 font-bold text-primary dark:text-white outline-none focus:ring-4 focus:ring-accent/10"
                   >
                     <option value="">No specific job post</option>
@@ -458,6 +469,19 @@ const OverviewTab = ({ setActiveTab }) => {
                       </option>
                     ))}
                   </select>
+                </div>
+
+                <div className="flex items-center gap-3 pt-2">
+                  <input 
+                    type="checkbox" 
+                    id="hireAgainIncludeSundays"
+                    checked={hireAgainData.includeSundays} 
+                    onChange={e => setHireAgainData({ ...hireAgainData, includeSundays: e.target.checked })}
+                    className="w-5 h-5 rounded border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 accent-accent cursor-pointer"
+                  />
+                  <label htmlFor="hireAgainIncludeSundays" className="text-xs font-bold text-slate-500 uppercase tracking-tighter cursor-pointer select-none">
+                    Include Sunday Work/Shifts
+                  </label>
                 </div>
 
                 <div className="flex gap-4 pt-4">

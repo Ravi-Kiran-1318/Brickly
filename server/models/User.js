@@ -15,8 +15,8 @@ const userSchema = new mongoose.Schema({
   
   // Location details from MapPicker
   location: {
-    type: { type: String, default: 'Point' },
-    coordinates: { type: [Number], index: '2dsphere' } // [longitude, latitude]
+    type: { type: String },
+    coordinates: { type: [Number] } // [longitude, latitude]
   },
   locationDetails: {
     displayName: String,

@@ -18,6 +18,7 @@ const BrowseProfessionalsTab = () => {
   const [selectedJobId, setSelectedJobId] = useState('');
   const [highlightedIds, setHighlightedIds] = useState(new Set());
   const [noticePeriodDays, setNoticePeriodDays] = useState(7);
+  const [includeSundays, setIncludeSundays] = useState(false);
 
   useEffect(() => {
     fetchProfessionals();
@@ -184,8 +185,9 @@ const BrowseProfessionalsTab = () => {
       return id === pId && !r.jobPostId && (r.status === 'Pending' || isRecentRejection(r));
     });
     
+    let defaultJobId = '';
     if (!isGeneralBlocked) {
-      setSelectedJobId('');
+      defaultJobId = '';
     } else {
       const firstAvailableJob = jobs.find(job => {
         const isJobBlocked = sentRequests.some(r => {
@@ -195,7 +197,26 @@ const BrowseProfessionalsTab = () => {
         });
         return !isJobBlocked;
       });
-      setSelectedJobId(firstAvailableJob ? firstAvailableJob._id : '');
+      defaultJobId = firstAvailableJob ? firstAvailableJob._id : '';
+    }
+    setSelectedJobId(defaultJobId);
+
+    // Sync includeSundays
+    if (defaultJobId) {
+      const selectedJob = jobs.find(j => j._id === defaultJobId);
+      setIncludeSundays(selectedJob ? (selectedJob.includeSundays || false) : false);
+    } else {
+      setIncludeSundays(false);
+    }
+  };
+
+  const handleJobChange = (jobId) => {
+    setSelectedJobId(jobId);
+    if (jobId) {
+      const selectedJob = jobs.find(j => j._id === jobId);
+      setIncludeSundays(selectedJob ? (selectedJob.includeSundays || false) : false);
+    } else {
+      setIncludeSundays(false);
     }
   };
 
@@ -209,7 +230,8 @@ const BrowseProfessionalsTab = () => {
         salary: post.expectedSalary,
         duration: 'Long term',
         jobPostId: selectedJobId || null,
-        noticePeriodDays: parseInt(noticePeriodDays) || 7
+        noticePeriodDays: parseInt(noticePeriodDays) || 7,
+        includeSundays: includeSundays
       });
       toast.success("Direct hire request sent successfully");
       if (res.data?.request) {
@@ -431,7 +453,7 @@ const BrowseProfessionalsTab = () => {
                 <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">Link to Job Post (Optional)</label>
                 <select 
                   value={selectedJobId}
-                  onChange={(e) => setSelectedJobId(e.target.value)}
+                  onChange={(e) => handleJobChange(e.target.value)}
                   className="w-full p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 font-bold text-primary dark:text-white outline-none focus:ring-4 focus:ring-accent/10 transition-all"
                 >
                   {(() => {
@@ -499,6 +521,19 @@ const BrowseProfessionalsTab = () => {
                   placeholder="e.g. 7"
                   className="w-full p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 font-bold text-primary dark:text-white outline-none focus:ring-4 focus:ring-accent/10 transition-all"
                 />
+              </div>
+
+              <div className="flex items-center gap-3 pt-2">
+                <input 
+                  type="checkbox" 
+                  id="directHireIncludeSundays"
+                  checked={includeSundays} 
+                  onChange={(e) => setIncludeSundays(e.target.checked)}
+                  className="w-5 h-5 rounded border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 accent-accent cursor-pointer"
+                />
+                <label htmlFor="directHireIncludeSundays" className="text-xs font-bold text-slate-500 uppercase tracking-tighter cursor-pointer select-none">
+                  Include Sunday Work/Shifts
+                </label>
               </div>
             </div>
 

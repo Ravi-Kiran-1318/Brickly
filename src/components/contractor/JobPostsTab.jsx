@@ -65,7 +65,8 @@ const JobPostsTab = () => {
   const [formData, setFormData] = useState({
     jobRole: '', workLocation: '', salary: '', 
     salaryType: 'monthly', duration: '', requiredSkills: '', startDate: '',
-    noticePeriodDays: 7
+    noticePeriodDays: 7,
+    includeSundays: false
   });
 
   useEffect(() => {
@@ -102,6 +103,14 @@ const JobPostsTab = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    const includeSundaysVal = formData.includeSundays === true;
+    if (formData.startDate && !includeSundaysVal) {
+      const selectedDate = new Date(formData.startDate);
+      if (selectedDate.getDay() === 0) {
+        toast.error("Job cannot start on Sunday unless Sunday work is enabled.");
+        return;
+      }
+    }
     try {
       const payload = {
         ...formData,
@@ -114,7 +123,8 @@ const JobPostsTab = () => {
       setFormData({
         jobRole: '', workLocation: '', salary: '', 
         salaryType: 'monthly', duration: '', requiredSkills: '', startDate: '',
-        noticePeriodDays: 7
+        noticePeriodDays: 7,
+        includeSundays: false
       });
       fetchJobs();
     } catch (err) {
@@ -277,6 +287,19 @@ const JobPostsTab = () => {
               <label className="text-sm font-bold text-slate-500 uppercase tracking-tighter">Job Start Date</label>
               <input type="date" required name="startDate" value={formData.startDate} onChange={(e) => setFormData({...formData, startDate: e.target.value})} className="w-full p-4 rounded-2xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 font-bold text-primary dark:text-white outline-none focus:ring-4 focus:ring-accent/10 transition-all" />
             </div>
+            <div className="space-y-2 flex items-center gap-3 pt-6">
+              <input 
+                type="checkbox" 
+                id="includeSundays"
+                name="includeSundays" 
+                checked={formData.includeSundays} 
+                onChange={(e) => setFormData({...formData, includeSundays: e.target.checked})} 
+                className="w-5 h-5 rounded border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 accent-primary focus:ring-4 focus:ring-accent/10 transition-all cursor-pointer" 
+              />
+              <label htmlFor="includeSundays" className="text-sm font-bold text-slate-500 uppercase tracking-tighter cursor-pointer select-none">
+                Include Sunday Work/Shifts
+              </label>
+            </div>
             <div className="md:col-span-2">
               <button type="submit" className="w-full py-4 bg-primary text-white rounded-2xl font-black mt-2 hover:bg-slate-800 transition-all">Create Job Post</button>
             </div>
@@ -297,6 +320,9 @@ const JobPostsTab = () => {
                     <h3 className="text-xl font-black text-primary dark:text-white capitalize">{job.jobRole}</h3>
                     {job.isFilled && (
                       <span className="text-[10px] font-black uppercase px-2.5 py-1 rounded-lg border bg-green-50 text-green-600 border-green-100">Filled</span>
+                    )}
+                    {job.includeSundays && (
+                      <span className="text-[10px] font-black uppercase px-2.5 py-1 rounded-lg border bg-indigo-50 text-indigo-600 border-indigo-100 dark:bg-indigo-950/20 dark:text-indigo-400 dark:border-indigo-900/50">Includes Sunday Work</span>
                     )}
                   </div>
                   <div className="flex flex-wrap items-center gap-x-6 gap-y-2 mt-2 text-sm text-slate-400 font-medium">

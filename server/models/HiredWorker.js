@@ -38,6 +38,7 @@ const hiredWorkerSchema = new mongoose.Schema({
     yearsOfExperience: { type: Number }
   }],
   crewSize: { type: Number, default: 1 },
+  includeSundays: { type: Boolean, default: false },
   joinedAt: { type: Date, default: Date.now }
 });
 
